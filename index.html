@@ -1295,7 +1295,7 @@ document.getElementById('export-settings-btn').addEventListener('click', async (
   }
 });
 
-document.getElementById('import-settings-btn').addEventListener('click', () => {
+document.getElementById('import-settings-btn').addEventListener('click', async () => {
   const raw = document.getElementById('import-settings-in').value.trim();
   if (!raw) return;
   try {
@@ -1312,9 +1312,17 @@ document.getElementById('import-settings-btn').addEventListener('click', () => {
     aiStatus.textContent = getProxy() ? 'AI 已启用（' + getModel() + '）' : 'AI 未配置';
     renderAccountManageList();
     document.getElementById('import-settings-in').value = '';
-    backupStatus.textContent = '导入成功，正在从云端拉取账本…';
-    if (getToken() && getGistId()) pullFromGist();
-    else setSync(getToken() ? 'ok' : '', getToken() ? '已配置' : '未配置');
+
+    if (getToken() && getGistId()) {
+      backupStatus.textContent = '导入成功，正在从云端拉取账本…';
+      await pullFromGist();
+      backupStatus.textContent = syncBtn.classList.contains('err')
+        ? '导入成功，但同步失败：' + syncStatus.textContent
+        : '导入成功，已从云端恢复账本';
+    } else {
+      setSync(getToken() ? 'ok' : '', getToken() ? '已配置' : '未配置');
+      backupStatus.textContent = '导入成功';
+    }
   } catch (e) {
     backupStatus.textContent = '导入失败，备份码可能不完整：' + e.message;
   }
