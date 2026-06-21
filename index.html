@@ -250,6 +250,55 @@
     .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
     .bar-amount { width: 64px; text-align: right; font-size: 13px; color: var(--muted); flex-shrink: 0; }
 
+    /* ── account balances ── */
+    .account-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 11px 14px;
+      margin-bottom: 8px;
+    }
+    .account-row .name { font-size: 14px; }
+    .account-row .balance { font-size: 15px; font-weight: 700; }
+    .account-row .balance.neg { color: #d93025; }
+    .account-row .balance.pos { color: var(--income); }
+
+    /* ── account management (settings) ── */
+    .account-manage-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .account-manage-row:last-child { border-bottom: none; }
+    .account-manage-row .name { font-size: 14px; }
+    .account-manage-row .remove {
+      background: none;
+      border: none;
+      color: #d93025;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 4px 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .account-add-row { display: flex; gap: 8px; margin-top: 12px; }
+    .account-add-row input { flex: 1; }
+    .account-add-row button {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 20px;
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     /* ── fab ── */
     .fab {
       position: fixed;
@@ -598,6 +647,11 @@
       <div class="cat-pills" id="cat-pills"></div>
     </div>
 
+    <div class="field" id="account-field">
+      <label>账户</label>
+      <div class="cat-pills" id="account-pills"></div>
+    </div>
+
     <div class="field">
       <label>日期</label>
       <input type="date" id="f-date">
@@ -648,6 +702,15 @@
 
     <hr>
 
+    <div class="sub-title">账户管理</div>
+    <div id="account-manage-list"></div>
+    <div class="account-add-row">
+      <input type="text" id="new-account-name" placeholder="新账户名称，例：Chase Checking" autocomplete="off">
+      <button id="add-account-btn">＋</button>
+    </div>
+
+    <hr>
+
     <div class="sub-title">AI 记账（DeepSeek 代理）</div>
 
     <div class="field">
@@ -695,6 +758,20 @@ const CATS = {
   expense: ['餐饮', '交通', '娱乐', '购物', '居住', '医疗', '其他'],
   income:  ['工资', '其他'],
 };
+
+// ─── accounts (money source) ────────────────────────────────────────────────
+const DEFAULT_ACCOUNTS = ['BoA Checking', 'BoA Saving', 'Chase Checking', 'Chase Saving'];
+
+function loadAccounts() {
+  try {
+    const a = JSON.parse(localStorage.getItem('accounts') || 'null');
+    return Array.isArray(a) && a.length ? a : DEFAULT_ACCOUNTS.slice();
+  } catch { return DEFAULT_ACCOUNTS.slice(); }
+}
+
+function saveAccounts(accounts) {
+  localStorage.setItem('accounts', JSON.stringify(accounts));
+}
 
 // ─── state ───────────────────────────────────────────────────────────────────
 function loadRecords() {
@@ -764,11 +841,12 @@ function renderBills() {
 
     html += `<div class="date-label"><span>${fmtDate(date)} ${weekday(date)}</span><span>${summary}</span></div>`;
     dayRecords.forEach(r => {
+      const sub = [r.account, r.note].filter(Boolean).join(' · ');
       html += `
         <div class="record-card" data-id="${r.id}">
           <div class="record-info">
             <div class="record-cat">${r.category}</div>
-            ${r.note ? `<div class="record-note">${escapeHtml(r.note)}</div>` : ''}
+            ${sub ? `<div class="record-note">${escapeHtml(sub)}</div>` : ''}
           </div>
           <span class="record-amount ${r.type}">${r.type === 'income' ? '+' : '-'}${fmtMoney(r.amount)}</span>
         </div>`;
@@ -840,6 +918,24 @@ function renderStats() {
       </div>`).join('');
   }
 
+  // account balances: cumulative net (income − expense) across ALL records, not period-filtered
+  const allRecords = loadRecords();
+  const accounts = loadAccounts();
+  const byAccount = {};
+  accounts.forEach(a => { byAccount[a] = 0; });
+  allRecords.forEach(r => {
+    if (!r.account) return;
+    if (!(r.account in byAccount)) byAccount[r.account] = 0;
+    byAccount[r.account] += r.type === 'income' ? r.amount : -r.amount;
+  });
+
+  html += '<hr style="margin:24px 0 14px;"><div class="sub-title">账户余额（累计）</div>';
+  html += Object.entries(byAccount).map(([name, bal]) => `
+    <div class="account-row">
+      <span class="name">${escapeHtml(name)}</span>
+      <span class="balance ${bal > 0 ? 'pos' : bal < 0 ? 'neg' : ''}">${fmtMoney(bal)}</span>
+    </div>`).join('');
+
   wrap.innerHTML = html;
 
   wrap.querySelectorAll('.period-pill').forEach(p => {
@@ -873,11 +969,14 @@ const fAmount   = document.getElementById('f-amount');
 const fDate     = document.getElementById('f-date');
 const fNote     = document.getElementById('f-note');
 const catPillsEl = document.getElementById('cat-pills');
+const accountPillsEl = document.getElementById('account-pills');
+const accountFieldEl = document.getElementById('account-field');
 const btnSubmit = document.getElementById('btn-submit');
 const typeToggle = document.getElementById('type-toggle');
 
 let selectedType = 'expense';
 let selectedCat = null;
+let selectedAccount = null;
 let editingId = null;
 
 function renderCatPills() {
@@ -886,6 +985,19 @@ function renderCatPills() {
   ).join('');
   catPillsEl.querySelectorAll('.cat-pill').forEach(p => {
     p.addEventListener('click', () => { selectedCat = p.dataset.cat; renderCatPills(); });
+  });
+}
+
+function renderAccountPills() {
+  const accounts = loadAccounts();
+  accountFieldEl.style.display = accounts.length ? '' : 'none';
+  if (!accounts.length) { selectedAccount = null; return; }
+  if (!accounts.includes(selectedAccount)) selectedAccount = accounts[0];
+  accountPillsEl.innerHTML = accounts.map(a =>
+    `<button class="cat-pill${a === selectedAccount ? ' selected' : ''}" data-acc="${escapeHtml(a)}">${escapeHtml(a)}</button>`
+  ).join('');
+  accountPillsEl.querySelectorAll('.cat-pill').forEach(p => {
+    p.addEventListener('click', () => { selectedAccount = p.dataset.acc; renderAccountPills(); });
   });
 }
 
@@ -908,20 +1020,24 @@ function openSheet(record) {
   if (record) {
     selectedType = record.type;
     selectedCat = record.category;
+    selectedAccount = record.account || null;
     fAmount.value = record.amount;
     fDate.value = record.date;
     fNote.value = record.note || '';
   } else {
     selectedType = 'expense';
     selectedCat = null;
+    selectedAccount = null;
     fAmount.value = '';
     fDate.value = today();
     fNote.value = '';
   }
   typeToggle.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('selected', b.dataset.type === selectedType));
   renderCatPills();
+  renderAccountPills();
   fAmount.classList.remove('error');
   catPillsEl.classList.remove('error');
+  accountPillsEl.classList.remove('error');
   overlay.classList.add('open');
   if (!record) setTimeout(() => fAmount.focus(), 320);
 }
@@ -935,16 +1051,19 @@ btnSubmit.addEventListener('click', () => {
   let ok = true;
   fAmount.classList.remove('error');
   catPillsEl.classList.remove('error');
+  accountPillsEl.classList.remove('error');
 
   const amount = parseFloat(fAmount.value);
   if (!amount || amount <= 0) { fAmount.classList.add('error'); ok = false; }
   if (!selectedCat) { catPillsEl.classList.add('error'); ok = false; }
+  if (loadAccounts().length && !selectedAccount) { accountPillsEl.classList.add('error'); ok = false; }
   if (!ok) return;
 
   const data = {
     type: selectedType,
     amount,
     category: selectedCat,
+    account: selectedAccount || '',
     date: fDate.value || today(),
     note: fNote.value.trim(),
   };
@@ -1086,6 +1205,7 @@ syncBtn.addEventListener('click', () => {
   document.getElementById('ai-proxy').value = getProxy();
   setModelOptions([], getModel());
   aiStatus.textContent = getProxy() ? 'AI 已启用（' + getModel() + '）' : 'AI 未配置';
+  renderAccountManageList();
   syncOverlay.classList.add('open');
 });
 syncOverlay.addEventListener('click', e => { if (e.target === syncOverlay) syncOverlay.classList.remove('open'); });
@@ -1098,6 +1218,36 @@ document.getElementById('s-save').addEventListener('click', async () => {
 });
 
 document.getElementById('s-pull').addEventListener('click', pullFromGist);
+
+// ─── account management ───────────────────────────────────────────────────────
+function renderAccountManageList() {
+  const accounts = loadAccounts();
+  const listEl = document.getElementById('account-manage-list');
+  listEl.innerHTML = accounts.map((a, i) => `
+    <div class="account-manage-row">
+      <span class="name">${escapeHtml(a)}</span>
+      <button class="remove" data-i="${i}">删除</button>
+    </div>`).join('') || '<p class="sync-help">还没有账户，添加一个吧</p>';
+
+  listEl.querySelectorAll('.remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const accounts = loadAccounts();
+      accounts.splice(parseInt(btn.dataset.i, 10), 1);
+      saveAccounts(accounts);
+      renderAccountManageList();
+    });
+  });
+}
+
+document.getElementById('add-account-btn').addEventListener('click', () => {
+  const input = document.getElementById('new-account-name');
+  const name = input.value.trim();
+  if (!name) return;
+  const accounts = loadAccounts();
+  if (!accounts.includes(name)) { accounts.push(name); saveAccounts(accounts); }
+  input.value = '';
+  renderAccountManageList();
+});
 
 // ─── AI config (Cloudflare Worker proxy holding the DeepSeek key) ─────────────
 const AI_PROXY = 'ai_proxy';
@@ -1180,6 +1330,9 @@ function appendMsg(kind, text) {
 }
 
 function appendConfirmCard(expense) {
+  const accounts = loadAccounts();
+  let chosenAccount = accounts[0] || '';
+
   const card = document.createElement('div');
   card.className = 'confirm-card';
   const typeLabel = expense.type === 'income' ? '收入' : '支出';
@@ -1189,12 +1342,25 @@ function appendConfirmCard(expense) {
     <div class="confirm-row"><span class="k">类别</span><span class="v">${expense.category}</span></div>
     <div class="confirm-row"><span class="k">日期</span><span class="v">${expense.date}</span></div>
     ${expense.note ? `<div class="confirm-row"><span class="k">备注</span><span class="v">${escapeHtml(expense.note)}</span></div>` : ''}
+    ${accounts.length ? `<div class="field" style="margin:10px 0 0;"><label>账户</label><div class="cat-pills confirm-acc-pills"></div></div>` : ''}
     <div class="confirm-actions">
       <button class="btn-cancel">取消</button>
       <button class="btn-ok">确认添加</button>
     </div>`;
   chatBody.appendChild(card);
   chatBody.scrollTop = chatBody.scrollHeight;
+
+  const accPillsEl = card.querySelector('.confirm-acc-pills');
+  function renderConfirmAccPills() {
+    if (!accPillsEl) return;
+    accPillsEl.innerHTML = accounts.map(a =>
+      `<button class="cat-pill${a === chosenAccount ? ' selected' : ''}" data-acc="${escapeHtml(a)}">${escapeHtml(a)}</button>`
+    ).join('');
+    accPillsEl.querySelectorAll('.cat-pill').forEach(p => {
+      p.addEventListener('click', () => { chosenAccount = p.dataset.acc; renderConfirmAccPills(); });
+    });
+  }
+  renderConfirmAccPills();
 
   card.querySelector('.btn-cancel').addEventListener('click', () => {
     card.remove();
@@ -1206,6 +1372,7 @@ function appendConfirmCard(expense) {
       type: expense.type,
       amount: expense.amount,
       category: expense.category,
+      account: chosenAccount,
       date: expense.date,
       note: expense.note || '',
     });
