@@ -1568,17 +1568,18 @@ async function sendChat() {
       appendMsg('bot', data.reply);
       chatHistory.push({ role: 'assistant', content: data.reply });
     }
-    if (data.expense && data.expense.amount > 0 && data.expense.category) {
-      const type = data.expense.type === 'income' ? 'income' : 'expense';
-      const cat = CATS[type].includes(data.expense.category) ? data.expense.category : '其他';
+    const entries = Array.isArray(data.expenses) ? data.expenses : (data.expense ? [data.expense] : []);
+    entries.filter(e => e && e.amount > 0 && e.category).forEach(e => {
+      const type = e.type === 'income' ? 'income' : 'expense';
+      const cat = CATS[type].includes(e.category) ? e.category : '其他';
       appendConfirmCard({
         type,
-        amount: Math.abs(parseFloat(data.expense.amount)) || 0,
+        amount: Math.abs(parseFloat(e.amount)) || 0,
         category: cat,
-        date: /^\d{4}-\d{2}-\d{2}$/.test(data.expense.date) ? data.expense.date : today(),
-        note: (data.expense.note || '').slice(0, 60),
+        date: /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : today(),
+        note: (e.note || '').slice(0, 60),
       });
-    }
+    });
   } catch (e) {
     thinking.remove();
     appendMsg('hint', '请求失败：' + e.message);
