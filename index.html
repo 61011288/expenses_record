@@ -263,10 +263,26 @@
       padding: 11px 14px;
       margin-bottom: 8px;
     }
+    .account-row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .account-row:active { background: #ebebed; }
     .account-row .name { font-size: 14px; }
     .account-row .balance { font-size: 15px; font-weight: 700; }
     .account-row .balance.neg { color: #d93025; }
     .account-row .balance.pos { color: var(--income); }
+    .account-row .balance-edit-input {
+      width: 100px;
+      height: 30px;
+      text-align: right;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 0 8px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+    }
 
     /* ── account management (settings) ── */
     .account-manage-row {
@@ -794,6 +810,33 @@ function saveAccounts(accounts) {
   localStorage.setItem('accounts', JSON.stringify(accounts));
 }
 
+// manual balance correction per account: lets the displayed balance be set directly
+// (e.g. to seed your real current balance) instead of only ever being the sum of records
+function loadAccountAdjustments() {
+  try { return JSON.parse(localStorage.getItem('account_adjustments') || '{}'); } catch { return {}; }
+}
+
+function saveAccountAdjustments(adj) {
+  localStorage.setItem('account_adjustments', JSON.stringify(adj));
+}
+
+function accountRecordedNet(name) {
+  return loadRecords()
+    .filter(r => r.account === name)
+    .reduce((s, r) => s + (r.type === 'income' ? r.amount : -r.amount), 0);
+}
+
+function accountBalance(name) {
+  const adj = loadAccountAdjustments();
+  return accountRecordedNet(name) + (adj[name] || 0);
+}
+
+function setAccountBalance(name, newBalance) {
+  const adj = loadAccountAdjustments();
+  adj[name] = newBalance - accountRecordedNet(name);
+  saveAccountAdjustments(adj);
+}
+
 // ─── state ───────────────────────────────────────────────────────────────────
 function loadRecords() {
   try { return JSON.parse(localStorage.getItem('expense_records') || '[]'); } catch { return []; }
@@ -939,25 +982,55 @@ function renderStats() {
       </div>`).join('');
   }
 
-  // account balances: cumulative net (income − expense) across ALL records, not period-filtered
-  const allRecords = loadRecords();
+  // account balances: cumulative net (income − expense), plus any manual correction,
+  // not period-filtered — this is meant to track the real running balance
   const accounts = loadAccounts();
-  const byAccount = {};
-  accounts.forEach(a => { byAccount[a] = 0; });
-  allRecords.forEach(r => {
-    if (!r.account) return;
-    if (!(r.account in byAccount)) byAccount[r.account] = 0;
-    byAccount[r.account] += r.type === 'income' ? r.amount : -r.amount;
-  });
+  const accountNames = new Set(accounts);
+  loadRecords().forEach(r => { if (r.account) accountNames.add(r.account); });
 
-  html += '<hr style="margin:24px 0 14px;"><div class="sub-title">账户余额（累计）</div>';
-  html += Object.entries(byAccount).map(([name, bal]) => `
-    <div class="account-row">
+  html += '<hr style="margin:24px 0 14px;"><div class="sub-title">账户余额（点击可直接改）</div>';
+  html += Array.from(accountNames).map(name => {
+    const bal = accountBalance(name);
+    return `
+    <div class="account-row" data-account="${escapeHtml(name)}">
       <span class="name">${escapeHtml(name)}</span>
       <span class="balance ${bal > 0 ? 'pos' : bal < 0 ? 'neg' : ''}">${fmtMoney(bal)}</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.account-row').forEach(row => {
+    row.addEventListener('click', () => {
+      if (row.querySelector('.balance-edit-input')) return;
+      const name = row.dataset.account;
+      const balanceEl = row.querySelector('.balance');
+      const current = accountBalance(name);
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'balance-edit-input';
+      input.inputMode = 'decimal';
+      input.value = fmtMoney(current);
+      balanceEl.replaceWith(input);
+      input.focus();
+      input.select();
+
+      let done = false;
+      function commit() {
+        if (done) return;
+        done = true;
+        const val = parseFloat(input.value);
+        if (!isNaN(val)) setAccountBalance(name, val);
+        renderStats();
+      }
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { done = true; renderStats(); }
+      });
+      input.addEventListener('click', e => e.stopPropagation());
+    });
+  });
 
   wrap.querySelectorAll('.period-pill').forEach(p => {
     p.addEventListener('click', () => { statsPeriod = p.dataset.period; renderStats(); });
