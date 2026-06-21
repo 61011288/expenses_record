@@ -87,11 +87,16 @@ export default {
         body: JSON.stringify({
           model,
           temperature: 0,
-          max_tokens: 100,
+          max_tokens: 200,
+          // some models (e.g. deepseek-v4-pro) default to extended "thinking" and put the
+          // real answer in reasoning_content instead of content, often truncated before
+          // it ever gets there — turn that off so content always has the JSON we asked for
+          thinking: { type: 'disabled' },
           messages: [{ role: 'system', content: systemPrompt }, ...messages],
         }),
       });
       const data = await r.json();
+      if (body.debug) return json({ status: r.status, raw: data }, 200, cors);
       const txt = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '').trim();
 
       const lastUserNote = String((messages[messages.length - 1] || {}).content || '').slice(0, 60);
