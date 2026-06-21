@@ -824,8 +824,8 @@ function saveAccountAdjustments(adj) {
 
 function accountRecordedNet(name) {
   return loadRecords()
-    .filter(r => r.account === name)
-    .reduce((s, r) => s + (r.type === 'income' ? r.amount : -r.amount), 0);
+    .filter(r => r.account === name && r.type === 'income')
+    .reduce((s, r) => s + r.amount, 0);
 }
 
 function accountBalance(name) {
@@ -1011,18 +1011,25 @@ function renderStats() {
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'balance-edit-input';
-      input.inputMode = 'decimal';
+      input.inputMode = 'text';
       input.value = fmtMoney(current);
+      input.placeholder = '支持算式，如 400-219';
       balanceEl.replaceWith(input);
       input.focus();
       input.select();
+
+      function evalExpr(str) {
+        const s = str.replace(/[^0-9+\-*/.() ]/g, '').trim();
+        if (!s) return NaN;
+        try { return Function('"use strict"; return (' + s + ')')(); } catch { return NaN; }
+      }
 
       let done = false;
       function commit() {
         if (done) return;
         done = true;
-        const val = parseFloat(input.value);
-        if (!isNaN(val)) setAccountBalance(name, val);
+        const val = evalExpr(input.value);
+        if (!isNaN(val) && isFinite(val)) setAccountBalance(name, val);
         renderStats();
       }
       input.addEventListener('blur', commit);
@@ -1086,8 +1093,9 @@ function renderCatPills() {
 
 function renderAccountPills() {
   const accounts = loadAccounts();
-  accountFieldEl.style.display = accounts.length ? '' : 'none';
-  if (!accounts.length) { selectedAccount = null; return; }
+  const show = accounts.length && selectedType === 'income';
+  accountFieldEl.style.display = show ? '' : 'none';
+  if (!show) { selectedAccount = null; return; }
   if (!accounts.includes(selectedAccount)) selectedAccount = accounts[0];
   accountPillsEl.innerHTML = accounts.map(a =>
     `<button class="cat-pill${a === selectedAccount ? ' selected' : ''}" data-acc="${escapeHtml(a)}">${escapeHtml(a)}</button>`
@@ -1102,6 +1110,7 @@ function selectType(type) {
   typeToggle.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('selected', b.dataset.type === type));
   if (!CATS[type].includes(selectedCat)) selectedCat = null;
   renderCatPills();
+  renderAccountPills();
 }
 
 typeToggle.querySelectorAll('.type-btn').forEach(b => {
@@ -1152,7 +1161,7 @@ btnSubmit.addEventListener('click', () => {
   const amount = parseFloat(fAmount.value);
   if (!amount || amount <= 0) { fAmount.classList.add('error'); ok = false; }
   if (!selectedCat) { catPillsEl.classList.add('error'); ok = false; }
-  if (loadAccounts().length && !selectedAccount) { accountPillsEl.classList.add('error'); ok = false; }
+  if (selectedType === 'income' && loadAccounts().length && !selectedAccount) { accountPillsEl.classList.add('error'); ok = false; }
   if (!ok) return;
 
   const data = {
