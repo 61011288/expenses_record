@@ -24,8 +24,11 @@ export default {
       return json({ error: 'method not allowed' }, 405, cors);
     }
 
+    // require a browser-supplied Origin matching ALLOWED — a missing Origin
+    // (e.g. a direct curl/script call bypassing the page) is rejected too,
+    // otherwise CORS only blocks browsers and does nothing against non-browser callers
     const origin = request.headers.get('Origin');
-    if (origin && origin !== ALLOWED) {
+    if (origin !== ALLOWED) {
       return json({ error: 'forbidden origin' }, 403, cors);
     }
 
