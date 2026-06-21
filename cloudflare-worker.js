@@ -7,7 +7,7 @@
 //   1) 环境变量（Secret）DEEPSEEK_KEY = 你的 DeepSeek API key
 //   2) 下面 ALLOWED 改成你部署网页的真实地址（例如 GitHub Pages 网址）
 
-const ALLOWED = 'https://your-username.github.io';
+const ALLOWED = 'https://61011288.github.io';
 
 export default {
   async fetch(request, env) {
