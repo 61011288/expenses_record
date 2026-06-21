@@ -473,6 +473,52 @@
       color: var(--accent);
       font-weight: 600;
     }
+    .cat-pill.add-pill {
+      border-style: dashed;
+      color: var(--muted);
+      font-size: 16px;
+      padding: 0 12px;
+    }
+    .cat-pill-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .cat-pill-wrap .cat-del {
+      display: none;
+      position: absolute;
+      top: -6px; right: -6px;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #d93025;
+      color: #fff;
+      font-size: 12px;
+      line-height: 18px;
+      text-align: center;
+      border: none;
+      cursor: pointer;
+      z-index: 1;
+    }
+    .cat-pill-wrap.editing .cat-del { display: block; }
+    .cat-pill-wrap.editing .cat-pill {
+      border-style: dashed;
+      border-color: var(--accent);
+    }
+    input.cat-pill-edit, .field input.cat-pill-edit {
+      height: 34px !important;
+      width: 60px !important;
+      min-width: 0;
+      flex: 0 0 auto;
+      border-radius: 17px !important;
+      border: 1.5px dashed var(--accent) !important;
+      background: var(--bg);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      text-align: center;
+      outline: none;
+      padding: 0 8px !important;
+      box-sizing: border-box;
+    }
 
     /* ── submit button ── */
     .btn-submit {
@@ -791,10 +837,23 @@
 
 <script>
 // ─── categories ──────────────────────────────────────────────────────────────
-const CATS = {
+const DEFAULT_CATS = {
   expense: ['餐饮', '交通', '娱乐', '购物', '居住', '医疗', '其他'],
   income:  ['工资', '其他'],
 };
+
+function loadCats() {
+  try {
+    const c = JSON.parse(localStorage.getItem('categories') || 'null');
+    if (c && Array.isArray(c.expense) && Array.isArray(c.income)) return c;
+  } catch {}
+  return { expense: DEFAULT_CATS.expense.slice(), income: DEFAULT_CATS.income.slice() };
+}
+function saveCats(cats) {
+  localStorage.setItem('categories', JSON.stringify(cats));
+  schedulePush();
+}
+let CATS = loadCats();
 
 // ─── accounts (money source) ────────────────────────────────────────────────
 const DEFAULT_ACCOUNTS = ['BoA Checking', 'BoA Saving', 'Chase Checking', 'Chase Saving'];
@@ -1083,11 +1142,104 @@ let selectedAccount = null;
 let editingId = null;
 
 function renderCatPills() {
-  catPillsEl.innerHTML = CATS[selectedType].map(c =>
-    `<button class="cat-pill${c === selectedCat ? ' selected' : ''}" data-cat="${c}">${c}</button>`
-  ).join('');
-  catPillsEl.querySelectorAll('.cat-pill').forEach(p => {
-    p.addEventListener('click', () => { selectedCat = p.dataset.cat; renderCatPills(); });
+  const cats = CATS[selectedType];
+  catPillsEl.innerHTML = cats.map(c =>
+    `<span class="cat-pill-wrap" data-cat="${escapeHtml(c)}">
+      <button class="cat-del">&times;</button>
+      <button class="cat-pill${c === selectedCat ? ' selected' : ''}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>
+    </span>`
+  ).join('') + '<button class="cat-pill add-pill" data-action="add">+</button>';
+
+  let longTimer = null;
+
+  catPillsEl.querySelectorAll('.cat-pill-wrap').forEach(wrap => {
+    const pill = wrap.querySelector('.cat-pill');
+    const cat = wrap.dataset.cat;
+
+    pill.addEventListener('click', () => {
+      if (wrap.classList.contains('editing')) return;
+      selectedCat = cat;
+      renderCatPills();
+    });
+
+    function startLong(e) {
+      e.preventDefault();
+      longTimer = setTimeout(() => enterEdit(wrap), 500);
+    }
+    function cancelLong() { clearTimeout(longTimer); }
+    pill.addEventListener('pointerdown', startLong);
+    pill.addEventListener('pointerup', cancelLong);
+    pill.addEventListener('pointerleave', cancelLong);
+
+    wrap.querySelector('.cat-del').addEventListener('click', e => {
+      e.stopPropagation();
+      const list = CATS[selectedType].filter(c => c !== cat);
+      if (!list.length) return;
+      CATS[selectedType] = list;
+      saveCats(CATS);
+      if (selectedCat === cat) selectedCat = null;
+      renderCatPills();
+    });
+  });
+
+  catPillsEl.querySelector('[data-action="add"]').addEventListener('click', () => {
+    const btn = catPillsEl.querySelector('[data-action="add"]');
+    const input = document.createElement('input');
+    input.className = 'cat-pill-edit';
+    input.placeholder = '新类别';
+    input.maxLength = 10;
+    btn.replaceWith(input);
+    input.focus();
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('mousedown', e => e.stopPropagation());
+
+    function commitAdd() {
+      const v = input.value.trim();
+      if (v && !CATS[selectedType].includes(v)) {
+        CATS[selectedType].push(v);
+        saveCats(CATS);
+      }
+      renderCatPills();
+    }
+    input.addEventListener('blur', commitAdd);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commitAdd(); }
+      if (e.key === 'Escape') renderCatPills();
+    });
+  });
+}
+
+function enterEdit(wrap) {
+  const cat = wrap.dataset.cat;
+  const pill = wrap.querySelector('.cat-pill');
+  wrap.classList.add('editing');
+
+  const input = document.createElement('input');
+  input.className = 'cat-pill-edit';
+  input.value = cat;
+  input.maxLength = 10;
+  pill.replaceWith(input);
+  input.focus();
+  input.select();
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('mousedown', e => e.stopPropagation());
+
+  function commitEdit() {
+    const v = input.value.trim();
+    const list = CATS[selectedType];
+    const idx = list.indexOf(cat);
+    if (idx === -1) { renderCatPills(); return; }
+    if (v && v !== cat && !list.includes(v)) {
+      list[idx] = v;
+      saveCats(CATS);
+      if (selectedCat === cat) selectedCat = v;
+    }
+    renderCatPills();
+  }
+  input.addEventListener('blur', commitEdit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+    if (e.key === 'Escape') renderCatPills();
   });
 }
 
@@ -1223,6 +1375,7 @@ const GIST_KEY  = 'gist_id';
 const GIST_FILE = 'expenses.json';
 const GIST_FILE_ADJ = 'account_adjustments.json';
 const GIST_FILE_ACCOUNTS = 'accounts.json';
+const GIST_FILE_CATS = 'categories.json';
 const syncBtn    = document.getElementById('sync-btn');
 const syncOverlay = document.getElementById('sync-overlay');
 const syncStatus = document.getElementById('sync-status');
@@ -1262,6 +1415,7 @@ async function pushToGist() {
       [GIST_FILE]: { content: localStorage.getItem('expense_records') || '[]' },
       [GIST_FILE_ADJ]: { content: localStorage.getItem('account_adjustments') || '{}' },
       [GIST_FILE_ACCOUNTS]: { content: localStorage.getItem('accounts') || JSON.stringify(DEFAULT_ACCOUNTS) },
+      [GIST_FILE_CATS]: { content: localStorage.getItem('categories') || JSON.stringify(DEFAULT_CATS) },
     },
   });
   try {
@@ -1293,9 +1447,12 @@ async function pullFromGist() {
     const file = data.files && data.files[GIST_FILE];
     const fileAdj = data.files && data.files[GIST_FILE_ADJ];
     const fileAccounts = data.files && data.files[GIST_FILE_ACCOUNTS];
+    const fileCats = data.files && data.files[GIST_FILE_CATS];
     if (file && file.content) localStorage.setItem('expense_records', file.content);
     if (fileAdj && fileAdj.content) localStorage.setItem('account_adjustments', fileAdj.content);
     if (fileAccounts && fileAccounts.content) localStorage.setItem('accounts', fileAccounts.content);
+    if (fileCats && fileCats.content) localStorage.setItem('categories', fileCats.content);
+    CATS = loadCats();
     renderAll();
     renderAccountManageList();
     localStorage.setItem('last_sync', new Date().toISOString());
