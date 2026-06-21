@@ -808,6 +808,7 @@ function loadAccounts() {
 
 function saveAccounts(accounts) {
   localStorage.setItem('accounts', JSON.stringify(accounts));
+  schedulePush();
 }
 
 // manual balance correction per account: lets the displayed balance be set directly
@@ -818,6 +819,7 @@ function loadAccountAdjustments() {
 
 function saveAccountAdjustments(adj) {
   localStorage.setItem('account_adjustments', JSON.stringify(adj));
+  schedulePush();
 }
 
 function accountRecordedNet(name) {
@@ -1210,6 +1212,8 @@ document.getElementById('list-bills').addEventListener('click', e => {
 const TOKEN_KEY = 'gh_token';
 const GIST_KEY  = 'gist_id';
 const GIST_FILE = 'expenses.json';
+const GIST_FILE_ADJ = 'account_adjustments.json';
+const GIST_FILE_ACCOUNTS = 'accounts.json';
 const syncBtn    = document.getElementById('sync-btn');
 const syncOverlay = document.getElementById('sync-overlay');
 const syncStatus = document.getElementById('sync-status');
@@ -1242,11 +1246,14 @@ function ghFetch(url, opts = {}) {
 async function pushToGist() {
   if (!getToken()) return;
   setSync('syncing', '同步中…');
-  const content = localStorage.getItem('expense_records') || '[]';
   const body = JSON.stringify({
     description: '记账数据备份',
     public: false,
-    files: { [GIST_FILE]: { content } },
+    files: {
+      [GIST_FILE]: { content: localStorage.getItem('expense_records') || '[]' },
+      [GIST_FILE_ADJ]: { content: localStorage.getItem('account_adjustments') || '{}' },
+      [GIST_FILE_ACCOUNTS]: { content: localStorage.getItem('accounts') || JSON.stringify(DEFAULT_ACCOUNTS) },
+    },
   });
   try {
     let gistId = getGistId(), res;
@@ -1275,10 +1282,13 @@ async function pullFromGist() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const file = data.files && data.files[GIST_FILE];
-    if (file && file.content) {
-      localStorage.setItem('expense_records', file.content);
-      renderAll();
-    }
+    const fileAdj = data.files && data.files[GIST_FILE_ADJ];
+    const fileAccounts = data.files && data.files[GIST_FILE_ACCOUNTS];
+    if (file && file.content) localStorage.setItem('expense_records', file.content);
+    if (fileAdj && fileAdj.content) localStorage.setItem('account_adjustments', fileAdj.content);
+    if (fileAccounts && fileAccounts.content) localStorage.setItem('accounts', fileAccounts.content);
+    renderAll();
+    renderAccountManageList();
     localStorage.setItem('last_sync', new Date().toISOString());
     setSync('ok', '已同步 · ' + syncTime());
   } catch (e) {
@@ -1291,6 +1301,14 @@ function schedulePush() {
   clearTimeout(pushTimer);
   pushTimer = setTimeout(pushToGist, 800);
 }
+
+// flush a pending debounced push immediately if the page is about to close/background,
+// otherwise edits made right before closing the tab never reach the gist
+function flushPendingPush() {
+  if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; pushToGist(); }
+}
+window.addEventListener('pagehide', flushPendingPush);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushPendingPush(); });
 
 syncBtn.addEventListener('click', () => {
   document.getElementById('s-token').value = getToken();
