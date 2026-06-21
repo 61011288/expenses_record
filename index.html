@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="记账">
+  <title>记账</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #4f9cf9;
+      --accent-light: rgba(79, 156, 249, 0.1);
+      --income: #34a853;
+      --income-light: rgba(52, 168, 83, 0.1);
+      --bg: #ffffff;
+      --surface: #f5f5f7;
+      --border: #e5e5ea;
+      --text: #1c1c1e;
+      --muted: #8e8e93;
+      --tab-h: 48px;
+      --safe-top: env(safe-area-inset-top);
+      --safe-bottom: env(safe-area-inset-bottom);
+    }
+
+    html { background: var(--bg); }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+      padding-top: var(--safe-top);
+      position: relative;
+    }
+
+    .sync-btn {
+      position: absolute;
+      right: 12px;
+      top: var(--safe-top);
+      height: var(--tab-h);
+      display: flex;
+      align-items: center;
+      background: none;
+      border: none;
+      padding: 0 4px;
+      cursor: pointer;
+      color: var(--muted);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sync-btn.ok      { color: var(--accent); }
+    .sync-btn.syncing { color: #f0b429; }
+    .sync-btn.err     { color: #d93025; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .sync-btn.syncing svg { animation: pulse 0.9s ease-in-out infinite; }
+
+    .sync-status {
+      font-size: 12px;
+      color: var(--muted);
+      margin: -8px 0 16px;
+    }
+    .sync-help {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 4px 0 16px;
+    }
+    .sync-help a { color: var(--accent); text-decoration: none; }
+
+    .sub-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+    .sheet hr { border: none; border-top: 1px solid var(--border); margin: 24px 0 18px; }
+
+    .tab {
+      flex: 1;
+      height: var(--tab-h);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* ── panels ── */
+    .panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .panel.active { display: flex; }
+
+    .item-list {
+      flex: 1;
+      padding: 8px 16px 90px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--muted);
+    }
+
+    .empty-state p { font-size: 15px; }
+
+    /* ── date group label ── */
+    .date-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.4px;
+      padding: 10px 2px 2px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* ── record card ── */
+    .record-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 11px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .record-card:active { background: #ebebed; }
+
+    .record-info { flex: 1; min-width: 0; }
+
+    .record-cat {
+      font-size: 15px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .record-note {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .record-amount {
+      font-size: 16px;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .record-amount.expense { color: var(--text); }
+    .record-amount.income  { color: var(--income); }
+
+    /* ── stats panel ── */
+    .stats-wrap {
+      flex: 1;
+      padding: 12px 16px 90px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .period-pills {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .period-pill {
+      height: 32px;
+      padding: 0 16px;
+      border-radius: 16px;
+      border: 1.5px solid var(--border);
+      background: var(--bg);
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--muted);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .period-pill.selected {
+      border-color: var(--accent);
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .summary-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .summary-card {
+      flex: 1;
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .summary-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .summary-card .value { font-size: 18px; font-weight: 700; }
+    .summary-card .value.income { color: var(--income); }
+
+    .bar-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+    }
+    .bar-cat { width: 56px; font-size: 13px; color: var(--text); flex-shrink: 0; }
+    .bar-track {
+      flex: 1;
+      height: 8px;
+      background: var(--surface);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+    .bar-amount { width: 64px; text-align: right; font-size: 13px; color: var(--muted); flex-shrink: 0; }
+
+    /* ── fab ── */
+    .fab {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 24px);
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 26px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(79, 156, 249, 0.45);
+      -webkit-tap-highlight-color: transparent;
+      z-index: 50;
+    }
+    .fab:active { transform: scale(0.92); }
+
+    /* ── chat fab ── */
+    .chat-fab {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 24px);
+      left: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      -webkit-tap-highlight-color: transparent;
+      z-index: 50;
+    }
+    .chat-fab:active { transform: scale(0.92); }
+
+    /* ── bottom sheet overlay ── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.3);
+      z-index: 100;
+      align-items: flex-end;
+    }
+    .overlay.open { display: flex; }
+
+    .sheet {
+      width: 100%;
+      background: var(--bg);
+      border-radius: 20px 20px 0 0;
+      padding: 0 20px calc(var(--safe-bottom) + 24px);
+      transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+      max-height: 90dvh;
+      overflow-y: auto;
+    }
+    .overlay.open .sheet { transform: translateY(0); }
+
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 12px auto 20px;
+    }
+
+    .sheet h2 { font-size: 17px; font-weight: 600; margin-bottom: 20px; }
+
+    /* ── form ── */
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .field input, .field select {
+      width: 100%;
+      height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0 12px;
+      font-size: 16px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .field input:focus, .field select:focus { border-color: var(--accent); }
+    .field input.error { border-color: #d93025; }
+    .cat-pills.error .cat-pill:not(.selected) { border-color: #d93025; }
+
+    .amount-input {
+      font-size: 28px !important;
+      font-weight: 700;
+      height: 56px !important;
+    }
+
+    /* ── type toggle ── */
+    .type-toggle {
+      display: flex;
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 3px;
+      margin-bottom: 16px;
+    }
+    .type-btn {
+      flex: 1;
+      height: 38px;
+      border: none;
+      background: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      color: var(--muted);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .type-btn.selected { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .type-btn.selected.expense { color: var(--text); }
+    .type-btn.selected.income { color: var(--income); }
+
+    /* ── category pills ── */
+    .cat-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .cat-pill {
+      height: 34px;
+      padding: 0 14px;
+      border-radius: 17px;
+      border: 1.5px solid var(--border);
+      background: var(--bg);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--muted);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cat-pill.selected {
+      border-color: var(--accent);
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* ── submit button ── */
+    .btn-submit {
+      width: 100%;
+      height: 48px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-submit:active { opacity: 0.85; }
+    .btn-submit:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── action sheet buttons ── */
+    .action-btn {
+      width: 100%;
+      height: 50px;
+      border: none;
+      border-radius: 12px;
+      background: var(--surface);
+      font-size: 16px;
+      font-family: inherit;
+      color: var(--text);
+      cursor: pointer;
+      margin-bottom: 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .action-btn:active { opacity: 0.7; }
+    .action-btn.danger { color: #d93025; }
+
+    /* ── chat overlay (full screen) ── */
+    .chat-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 200;
+      flex-direction: column;
+    }
+    .chat-overlay.open { display: flex; }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      height: var(--tab-h);
+      padding: var(--safe-top) 8px 0;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .chat-back {
+      width: 40px;
+      height: var(--tab-h);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .chat-title { font-size: 16px; font-weight: 600; flex: 1; text-align: center; margin-right: 40px; }
+
+    .chat-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .msg { max-width: 78%; font-size: 15px; line-height: 1.4; }
+    .msg.user { align-self: flex-end; background: var(--accent); color: #fff; padding: 10px 14px; border-radius: 16px 16px 4px 16px; }
+    .msg.bot  { align-self: flex-start; background: var(--surface); color: var(--text); padding: 10px 14px; border-radius: 16px 16px 16px 4px; }
+    .msg.hint { align-self: center; color: var(--muted); font-size: 12px; }
+
+    .confirm-card {
+      align-self: flex-start;
+      width: 86%;
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+    .confirm-row { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
+    .confirm-row .k { color: var(--muted); }
+    .confirm-row .v { font-weight: 600; }
+    .confirm-row .v.income { color: var(--income); }
+    .confirm-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .confirm-actions button {
+      flex: 1;
+      height: 38px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .confirm-actions .btn-ok { background: var(--accent); color: #fff; }
+    .confirm-actions .btn-cancel { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+    .confirm-card.done .confirm-actions { display: none; }
+    .confirm-card.done::after { content: '已添加 ✓'; display: block; margin-top: 10px; font-size: 12px; color: var(--income); }
+
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+      padding: 10px 12px calc(var(--safe-bottom) + 10px);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .chat-input-row input {
+      flex: 1;
+      height: 40px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 0 16px;
+      font-size: 16px;
+      font-family: inherit;
+      outline: none;
+      background: var(--surface);
+    }
+    .chat-input-row input:focus { border-color: var(--accent); }
+    .chat-send {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .chat-send:disabled { opacity: 0.4; }
+  </style>
+</head>
+<body>
+
+<div class="tabs">
+  <div class="tab active" data-tab="bills">账单</div>
+  <div class="tab" data-tab="stats">统计</div>
+  <button class="sync-btn" id="sync-btn" title="云备份" aria-label="云备份">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 18H6a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 16.5 8.5a.6.6 0 0 0 .04.2A4 4 0 0 1 19 18z"/></svg>
+  </button>
+</div>
+
+<div class="panel active" id="panel-bills">
+  <div class="item-list" id="list-bills"></div>
+</div>
+
+<div class="panel" id="panel-stats">
+  <div class="stats-wrap" id="stats-wrap"></div>
+</div>
+
+<button class="chat-fab" id="chat-fab" title="AI 记账" aria-label="AI 记账">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 5.94 2 11c0 2.66 1.49 5.02 3.84 6.7C5.6 19.36 5 21 5 21s2.5-.5 4.2-1.39c.9.25 1.83.39 2.8.39 5.52 0 10-3.94 10-9s-4.48-9-10-9z"/></svg>
+</button>
+
+<button class="fab" id="fab">＋</button>
+
+<!-- add/edit record sheet -->
+<div class="overlay" id="overlay">
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle"></div>
+    <h2 id="form-title">添加账目</h2>
+
+    <div class="type-toggle" id="type-toggle">
+      <button class="type-btn expense selected" data-type="expense">支出</button>
+      <button class="type-btn income" data-type="income">收入</button>
+    </div>
+
+    <div class="field">
+      <label>金额</label>
+      <input type="text" id="f-amount" class="amount-input" placeholder="0.00" inputmode="decimal">
+    </div>
+
+    <div class="field">
+      <label>类别</label>
+      <div class="cat-pills" id="cat-pills"></div>
+    </div>
+
+    <div class="field">
+      <label>日期</label>
+      <input type="date" id="f-date">
+    </div>
+
+    <div class="field">
+      <label>备注（可选）</label>
+      <input type="text" id="f-note" placeholder="例：和朋友吃饭" autocomplete="off">
+    </div>
+
+    <button class="btn-submit" id="btn-submit">添加</button>
+  </div>
+</div>
+
+<!-- action sheet -->
+<div class="overlay" id="action-overlay">
+  <div class="sheet" id="action-sheet">
+    <div class="sheet-handle"></div>
+    <h2 id="action-title">操作</h2>
+    <button class="action-btn" id="act-edit">编辑</button>
+    <button class="action-btn danger" id="act-delete">删除</button>
+  </div>
+</div>
+
+<!-- settings sheet -->
+<div class="overlay" id="sync-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>设置</h2>
+
+    <div class="sub-title">云备份（GitHub Gist）</div>
+
+    <div class="field">
+      <label>GitHub Token（需 gist 权限）</label>
+      <input type="password" id="s-token" placeholder="ghp_… 或 github_pat_…" autocomplete="off">
+    </div>
+
+    <p class="sync-help">
+      获取方式：打开
+      <a href="https://github.com/settings/tokens/new?scopes=gist&description=expenses" target="_blank" rel="noopener">github.com/settings/tokens</a>
+      → Generate new token (classic) → 勾选 <b>gist</b> → 生成后复制粘贴到上面。Token 只存在你的手机本地，不会发给除 GitHub 以外的任何服务器。
+    </p>
+
+    <p class="sync-status" id="sync-status">未配置</p>
+
+    <button class="btn-submit" id="s-save">保存并同步</button>
+    <button class="action-btn" id="s-pull" style="margin-top:10px;">从云端恢复</button>
+
+    <hr>
+
+    <div class="sub-title">AI 记账（DeepSeek 代理）</div>
+
+    <div class="field">
+      <label>AI 代理地址（Cloudflare Worker URL）</label>
+      <input type="text" id="ai-proxy" placeholder="https://xxx.workers.dev" autocomplete="off" inputmode="url">
+    </div>
+
+    <div class="field">
+      <label>模型</label>
+      <select id="ai-model"></select>
+    </div>
+    <button class="action-btn" id="ai-fetch" style="margin-bottom:10px;">拉取可用模型</button>
+
+    <p class="sync-help">
+      点击主页左下角的对话气泡，用一句话告诉 AI 你的开支，比如"今天打车花了32块"，AI 会解析出金额和类别，
+      你确认后才会写入账本。DeepSeek key 藏在你的 Cloudflare Worker 里，这里只填 Worker 网址和模型，前端不接触 key。
+    </p>
+
+    <p class="sync-status" id="ai-status">AI 未配置</p>
+
+    <button class="btn-submit" id="ai-save">保存</button>
+  </div>
+</div>
+
+<!-- chat overlay -->
+<div class="chat-overlay" id="chat-overlay">
+  <div class="chat-header">
+    <button class="chat-back" id="chat-back" aria-label="返回">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="chat-title">AI 记账</div>
+  </div>
+  <div class="chat-body" id="chat-body"></div>
+  <div class="chat-input-row">
+    <input type="text" id="chat-input" placeholder="说说你的开支，例如：午饭花了28" autocomplete="off">
+    <button class="chat-send" id="chat-send" aria-label="发送">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+// ─── categories ──────────────────────────────────────────────────────────────
+const CATS = {
+  expense: ['餐饮', '交通', '娱乐', '购物', '居住', '医疗', '其他'],
+  income:  ['工资', '其他'],
+};
+
+// ─── state ───────────────────────────────────────────────────────────────────
+function loadRecords() {
+  try { return JSON.parse(localStorage.getItem('expense_records') || '[]'); } catch { return []; }
+}
+
+function saveRecords(records) {
+  localStorage.setItem('expense_records', JSON.stringify(records));
+  schedulePush();
+}
+
+function addRecord(r) {
+  const records = loadRecords();
+  records.push(r);
+  saveRecords(records);
+}
+
+function getRecord(id) {
+  return loadRecords().find(r => r.id === id);
+}
+
+function deleteRecord(id) {
+  saveRecords(loadRecords().filter(r => r.id !== id));
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+const today = () => new Date().toISOString().slice(0, 10);
+
+function fmtMoney(n) {
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+function fmtDate(dateStr) {
+  const [y, m, d] = dateStr.split('-');
+  return m + '/' + d;
+}
+
+function weekday(dateStr) {
+  return ['周日','周一','周二','周三','周四','周五','周六'][new Date(dateStr + 'T12:00:00').getDay()];
+}
+
+// ─── render: bills list (grouped by date, newest first) ─────────────────────
+function renderBills() {
+  const listEl = document.getElementById('list-bills');
+  const records = loadRecords().slice().sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
+
+  if (records.length === 0) {
+    listEl.innerHTML = '<div class="empty-state"><p>还没有账目，点击右下角添加</p></div>';
+    return;
+  }
+
+  const groups = {};
+  const order = [];
+  records.forEach(r => {
+    if (!groups[r.date]) { groups[r.date] = []; order.push(r.date); }
+    groups[r.date].push(r);
+  });
+
+  let html = '';
+  order.forEach(date => {
+    const dayRecords = groups[date];
+    const dayExpense = dayRecords.filter(r => r.type === 'expense').reduce((s, r) => s + r.amount, 0);
+    const dayIncome  = dayRecords.filter(r => r.type === 'income').reduce((s, r) => s + r.amount, 0);
+    let summary = '';
+    if (dayExpense > 0) summary += '支 ' + fmtMoney(dayExpense);
+    if (dayIncome > 0) summary += (summary ? '  ' : '') + '收 ' + fmtMoney(dayIncome);
+
+    html += `<div class="date-label"><span>${fmtDate(date)} ${weekday(date)}</span><span>${summary}</span></div>`;
+    dayRecords.forEach(r => {
+      html += `
+        <div class="record-card" data-id="${r.id}">
+          <div class="record-info">
+            <div class="record-cat">${r.category}</div>
+            ${r.note ? `<div class="record-note">${escapeHtml(r.note)}</div>` : ''}
+          </div>
+          <span class="record-amount ${r.type}">${r.type === 'income' ? '+' : '-'}${fmtMoney(r.amount)}</span>
+        </div>`;
+    });
+  });
+
+  listEl.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ─── render: stats ────────────────────────────────────────────────────────────
+let statsPeriod = 'month';
+
+function periodRange(period) {
+  const now = new Date();
+  if (period === 'week') {
+    const day = now.getDay() || 7;
+    const start = new Date(now);
+    start.setDate(now.getDate() - day + 1);
+    return { start: start.toISOString().slice(0, 10), end: today() };
+  }
+  if (period === 'year') {
+    return { start: now.getFullYear() + '-01-01', end: today() };
+  }
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  return { start: now.getFullYear() + '-' + m + '-01', end: today() };
+}
+
+function renderStats() {
+  const wrap = document.getElementById('stats-wrap');
+  const { start, end } = periodRange(statsPeriod);
+  const records = loadRecords().filter(r => r.date >= start && r.date <= end);
+
+  const totalExpense = records.filter(r => r.type === 'expense').reduce((s, r) => s + r.amount, 0);
+  const totalIncome  = records.filter(r => r.type === 'income').reduce((s, r) => s + r.amount, 0);
+
+  const byCat = {};
+  records.filter(r => r.type === 'expense').forEach(r => {
+    byCat[r.category] = (byCat[r.category] || 0) + r.amount;
+  });
+  const catList = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  const maxCat = catList.length ? catList[0][1] : 0;
+
+  let html = `
+    <div class="period-pills">
+      <button class="period-pill ${statsPeriod === 'week' ? 'selected' : ''}" data-period="week">本周</button>
+      <button class="period-pill ${statsPeriod === 'month' ? 'selected' : ''}" data-period="month">本月</button>
+      <button class="period-pill ${statsPeriod === 'year' ? 'selected' : ''}" data-period="year">本年</button>
+    </div>
+    <div class="summary-row">
+      <div class="summary-card"><div class="label">支出</div><div class="value">${fmtMoney(totalExpense)}</div></div>
+      <div class="summary-card"><div class="label">收入</div><div class="value income">${fmtMoney(totalIncome)}</div></div>
+      <div class="summary-card"><div class="label">结余</div><div class="value">${fmtMoney(totalIncome - totalExpense)}</div></div>
+    </div>`;
+
+  if (catList.length === 0) {
+    html += '<div class="empty-state" style="flex:none;padding:40px 0;"><p>这段时间还没有支出记录</p></div>';
+  } else {
+    html += catList.map(([cat, amt]) => `
+      <div class="bar-row">
+        <div class="bar-cat">${cat}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${maxCat ? (amt / maxCat * 100) : 0}%"></div></div>
+        <div class="bar-amount">${fmtMoney(amt)}</div>
+      </div>`).join('');
+  }
+
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.period-pill').forEach(p => {
+    p.addEventListener('click', () => { statsPeriod = p.dataset.period; renderStats(); });
+  });
+}
+
+function renderAll() {
+  renderBills();
+  renderStats();
+}
+
+// ─── tabs ─────────────────────────────────────────────────────────────────────
+let activeTab = 'bills';
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', function () {
+    activeTab = this.dataset.tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
+    this.classList.add('active');
+    const panel = document.getElementById('panel-' + activeTab);
+    panel.classList.add('active');
+    panel.style.display = 'flex';
+    if (activeTab === 'stats') renderStats();
+  });
+});
+
+// ─── add/edit sheet ───────────────────────────────────────────────────────────
+const overlay   = document.getElementById('overlay');
+const fAmount   = document.getElementById('f-amount');
+const fDate     = document.getElementById('f-date');
+const fNote     = document.getElementById('f-note');
+const catPillsEl = document.getElementById('cat-pills');
+const btnSubmit = document.getElementById('btn-submit');
+const typeToggle = document.getElementById('type-toggle');
+
+let selectedType = 'expense';
+let selectedCat = null;
+let editingId = null;
+
+function renderCatPills() {
+  catPillsEl.innerHTML = CATS[selectedType].map(c =>
+    `<button class="cat-pill${c === selectedCat ? ' selected' : ''}" data-cat="${c}">${c}</button>`
+  ).join('');
+  catPillsEl.querySelectorAll('.cat-pill').forEach(p => {
+    p.addEventListener('click', () => { selectedCat = p.dataset.cat; renderCatPills(); });
+  });
+}
+
+function selectType(type) {
+  selectedType = type;
+  typeToggle.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('selected', b.dataset.type === type));
+  if (!CATS[type].includes(selectedCat)) selectedCat = null;
+  renderCatPills();
+}
+
+typeToggle.querySelectorAll('.type-btn').forEach(b => {
+  b.addEventListener('click', () => selectType(b.dataset.type));
+});
+
+function openSheet(record) {
+  editingId = record ? record.id : null;
+  document.getElementById('form-title').textContent = record ? '编辑账目' : '添加账目';
+  btnSubmit.textContent = record ? '保存' : '添加';
+
+  if (record) {
+    selectedType = record.type;
+    selectedCat = record.category;
+    fAmount.value = record.amount;
+    fDate.value = record.date;
+    fNote.value = record.note || '';
+  } else {
+    selectedType = 'expense';
+    selectedCat = null;
+    fAmount.value = '';
+    fDate.value = today();
+    fNote.value = '';
+  }
+  typeToggle.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('selected', b.dataset.type === selectedType));
+  renderCatPills();
+  fAmount.classList.remove('error');
+  catPillsEl.classList.remove('error');
+  overlay.classList.add('open');
+  if (!record) setTimeout(() => fAmount.focus(), 320);
+}
+
+function closeSheet() { overlay.classList.remove('open'); }
+
+document.getElementById('fab').addEventListener('click', () => openSheet());
+overlay.addEventListener('click', e => { if (e.target === overlay) closeSheet(); });
+
+btnSubmit.addEventListener('click', () => {
+  let ok = true;
+  fAmount.classList.remove('error');
+  catPillsEl.classList.remove('error');
+
+  const amount = parseFloat(fAmount.value);
+  if (!amount || amount <= 0) { fAmount.classList.add('error'); ok = false; }
+  if (!selectedCat) { catPillsEl.classList.add('error'); ok = false; }
+  if (!ok) return;
+
+  const data = {
+    type: selectedType,
+    amount,
+    category: selectedCat,
+    date: fDate.value || today(),
+    note: fNote.value.trim(),
+  };
+
+  if (editingId) {
+    const records = loadRecords();
+    const idx = records.findIndex(r => r.id === editingId);
+    if (idx !== -1) { records[idx] = { ...records[idx], ...data }; saveRecords(records); }
+  } else {
+    addRecord({ id: Date.now().toString() + Math.random().toString(36).slice(2, 6), ...data });
+  }
+
+  closeSheet();
+  renderAll();
+});
+
+// ─── action sheet (edit / delete) ────────────────────────────────────────────
+const actionOverlay = document.getElementById('action-overlay');
+let actionItemId = null;
+
+function openActionSheet(id) {
+  const r = getRecord(id);
+  if (!r) return;
+  actionItemId = id;
+  document.getElementById('action-title').textContent = r.category + ' · ' + fmtMoney(r.amount);
+  actionOverlay.classList.add('open');
+}
+function closeActionSheet() { actionOverlay.classList.remove('open'); }
+
+actionOverlay.addEventListener('click', e => { if (e.target === actionOverlay) closeActionSheet(); });
+
+document.getElementById('act-delete').addEventListener('click', () => {
+  deleteRecord(actionItemId);
+  closeActionSheet();
+  renderAll();
+});
+
+document.getElementById('act-edit').addEventListener('click', () => {
+  const r = getRecord(actionItemId);
+  closeActionSheet();
+  if (r) openSheet(r);
+});
+
+document.getElementById('list-bills').addEventListener('click', e => {
+  const card = e.target.closest('.record-card');
+  if (card) openActionSheet(card.dataset.id);
+});
+
+// ─── cloud sync (GitHub Gist) ─────────────────────────────────────────────────
+const TOKEN_KEY = 'gh_token';
+const GIST_KEY  = 'gist_id';
+const GIST_FILE = 'expenses.json';
+const syncBtn    = document.getElementById('sync-btn');
+const syncOverlay = document.getElementById('sync-overlay');
+const syncStatus = document.getElementById('sync-status');
+let pushTimer = null;
+
+const getToken  = () => localStorage.getItem(TOKEN_KEY) || '';
+const getGistId = () => localStorage.getItem(GIST_KEY) || '';
+
+function setSync(state, text) {
+  syncBtn.className = 'sync-btn' + (state ? ' ' + state : '');
+  if (text) syncStatus.textContent = text;
+}
+
+function syncTime() {
+  const t = localStorage.getItem('last_sync');
+  return t ? new Date(t).toLocaleString('zh-CN', { hour12: false }) : '';
+}
+
+function ghFetch(url, opts = {}) {
+  return fetch(url, {
+    ...opts,
+    headers: {
+      'Authorization': 'Bearer ' + getToken(),
+      'Accept': 'application/vnd.github+json',
+      ...(opts.headers || {}),
+    },
+  });
+}
+
+async function pushToGist() {
+  if (!getToken()) return;
+  setSync('syncing', '同步中…');
+  const content = localStorage.getItem('expense_records') || '[]';
+  const body = JSON.stringify({
+    description: '记账数据备份',
+    public: false,
+    files: { [GIST_FILE]: { content } },
+  });
+  try {
+    let gistId = getGistId(), res;
+    if (gistId) {
+      res = await ghFetch('https://api.github.com/gists/' + gistId, { method: 'PATCH', body });
+      if (res.status === 404) gistId = '';
+    }
+    if (!gistId) {
+      res = await ghFetch('https://api.github.com/gists', { method: 'POST', body });
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.id) localStorage.setItem(GIST_KEY, data.id);
+    localStorage.setItem('last_sync', new Date().toISOString());
+    setSync('ok', '已同步 · ' + syncTime());
+  } catch (e) {
+    setSync('err', '同步失败：' + e.message);
+  }
+}
+
+async function pullFromGist() {
+  if (!getToken() || !getGistId()) return;
+  setSync('syncing', '同步中…');
+  try {
+    const res = await ghFetch('https://api.github.com/gists/' + getGistId());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const file = data.files && data.files[GIST_FILE];
+    if (file && file.content) {
+      localStorage.setItem('expense_records', file.content);
+      renderAll();
+    }
+    localStorage.setItem('last_sync', new Date().toISOString());
+    setSync('ok', '已同步 · ' + syncTime());
+  } catch (e) {
+    setSync('err', '恢复失败：' + e.message);
+  }
+}
+
+function schedulePush() {
+  if (!getToken()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushToGist, 800);
+}
+
+syncBtn.addEventListener('click', () => {
+  document.getElementById('s-token').value = getToken();
+  if (!getToken()) setSync('', '未配置');
+  else syncStatus.textContent = syncTime() ? '已同步 · ' + syncTime() : '已配置';
+  document.getElementById('ai-proxy').value = getProxy();
+  setModelOptions([], getModel());
+  aiStatus.textContent = getProxy() ? 'AI 已启用（' + getModel() + '）' : 'AI 未配置';
+  syncOverlay.classList.add('open');
+});
+syncOverlay.addEventListener('click', e => { if (e.target === syncOverlay) syncOverlay.classList.remove('open'); });
+
+document.getElementById('s-save').addEventListener('click', async () => {
+  const t = document.getElementById('s-token').value.trim();
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else { localStorage.removeItem(TOKEN_KEY); setSync('', '未配置'); return; }
+  await pushToGist();
+});
+
+document.getElementById('s-pull').addEventListener('click', pullFromGist);
+
+// ─── AI config (Cloudflare Worker proxy holding the DeepSeek key) ─────────────
+const AI_PROXY = 'ai_proxy';
+const AI_MODEL = 'ai_model';
+const DEFAULT_MODEL = 'deepseek-chat';
+const aiStatus = document.getElementById('ai-status');
+const getProxy = () => (localStorage.getItem(AI_PROXY) || '').trim();
+const getModel = () => localStorage.getItem(AI_MODEL) || DEFAULT_MODEL;
+
+function setModelOptions(models, selected) {
+  const sel = document.getElementById('ai-model');
+  const list = (models && models.length) ? models.slice() : [];
+  if (selected && !list.includes(selected)) list.unshift(selected);
+  if (!list.length) list.push(DEFAULT_MODEL);
+  sel.innerHTML = '';
+  list.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m; o.textContent = m;
+    if (m === selected) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+document.getElementById('ai-save').addEventListener('click', () => {
+  const u = document.getElementById('ai-proxy').value.trim();
+  const m = document.getElementById('ai-model').value || DEFAULT_MODEL;
+  localStorage.setItem(AI_MODEL, m);
+  if (u) { localStorage.setItem(AI_PROXY, u); aiStatus.textContent = 'AI 已启用（' + m + '）'; }
+  else { localStorage.removeItem(AI_PROXY); aiStatus.textContent = 'AI 未配置'; }
+});
+
+document.getElementById('ai-fetch').addEventListener('click', async () => {
+  if (!getProxy()) { aiStatus.textContent = '请先填写 Worker 网址'; return; }
+  aiStatus.textContent = '拉取模型中…';
+  try {
+    const res = await fetch(getProxy(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'models' }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.models && data.models.length) {
+      setModelOptions(data.models, getModel());
+      aiStatus.textContent = '拉取到 ' + data.models.length + ' 个模型，选好后点保存';
+    } else {
+      aiStatus.textContent = '没拉到模型：' + (data.error || '空列表');
+    }
+  } catch (e) {
+    aiStatus.textContent = '拉取失败：' + e.message;
+  }
+});
+
+// ─── AI chat (natural-language bookkeeping) ──────────────────────────────────
+const chatOverlay = document.getElementById('chat-overlay');
+const chatBody = document.getElementById('chat-body');
+const chatInput = document.getElementById('chat-input');
+const chatSend = document.getElementById('chat-send');
+let chatHistory = []; // [{role:'user'|'assistant', content:string}], kept short & in-memory only
+
+function openChat() {
+  chatOverlay.classList.add('open');
+  if (!chatBody.children.length) {
+    appendMsg('hint', '直接说一句你的开支，比如"打车花了32"、"发工资到账8000"，我会帮你整理好分类，你确认后再记账。');
+  }
+  setTimeout(() => chatInput.focus(), 200);
+}
+function closeChat() { chatOverlay.classList.remove('open'); }
+
+document.getElementById('chat-fab').addEventListener('click', openChat);
+document.getElementById('chat-back').addEventListener('click', closeChat);
+
+function appendMsg(kind, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + kind;
+  div.textContent = text;
+  chatBody.appendChild(div);
+  chatBody.scrollTop = chatBody.scrollHeight;
+  return div;
+}
+
+function appendConfirmCard(expense) {
+  const card = document.createElement('div');
+  card.className = 'confirm-card';
+  const typeLabel = expense.type === 'income' ? '收入' : '支出';
+  card.innerHTML = `
+    <div class="confirm-row"><span class="k">类型</span><span class="v ${expense.type}">${typeLabel}</span></div>
+    <div class="confirm-row"><span class="k">金额</span><span class="v">${fmtMoney(expense.amount)}</span></div>
+    <div class="confirm-row"><span class="k">类别</span><span class="v">${expense.category}</span></div>
+    <div class="confirm-row"><span class="k">日期</span><span class="v">${expense.date}</span></div>
+    ${expense.note ? `<div class="confirm-row"><span class="k">备注</span><span class="v">${escapeHtml(expense.note)}</span></div>` : ''}
+    <div class="confirm-actions">
+      <button class="btn-cancel">取消</button>
+      <button class="btn-ok">确认添加</button>
+    </div>`;
+  chatBody.appendChild(card);
+  chatBody.scrollTop = chatBody.scrollHeight;
+
+  card.querySelector('.btn-cancel').addEventListener('click', () => {
+    card.remove();
+    appendMsg('hint', '已取消，没有写入账本');
+  });
+  card.querySelector('.btn-ok').addEventListener('click', () => {
+    addRecord({
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      type: expense.type,
+      amount: expense.amount,
+      category: expense.category,
+      date: expense.date,
+      note: expense.note || '',
+    });
+    renderAll();
+    card.classList.add('done');
+  });
+}
+
+async function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  if (!getProxy()) {
+    appendMsg('user', text);
+    appendMsg('hint', '请先在设置里填写 AI 代理地址（Cloudflare Worker URL）才能使用 AI 记账');
+    chatInput.value = '';
+    return;
+  }
+  chatInput.value = '';
+  appendMsg('user', text);
+  chatHistory.push({ role: 'user', content: text });
+  chatSend.disabled = true;
+  const thinking = appendMsg('hint', '思考中…');
+
+  try {
+    const res = await fetch(getProxy(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'chat',
+        model: getModel(),
+        today: today(),
+        categories: CATS,
+        messages: chatHistory.slice(-10),
+      }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    thinking.remove();
+
+    if (data.reply) {
+      appendMsg('bot', data.reply);
+      chatHistory.push({ role: 'assistant', content: data.reply });
+    }
+    if (data.expense && data.expense.amount > 0 && data.expense.category) {
+      const type = data.expense.type === 'income' ? 'income' : 'expense';
+      const cat = CATS[type].includes(data.expense.category) ? data.expense.category : '其他';
+      appendConfirmCard({
+        type,
+        amount: Math.abs(parseFloat(data.expense.amount)) || 0,
+        category: cat,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(data.expense.date) ? data.expense.date : today(),
+        note: (data.expense.note || '').slice(0, 60),
+      });
+    }
+  } catch (e) {
+    thinking.remove();
+    appendMsg('hint', '请求失败：' + e.message);
+  } finally {
+    chatSend.disabled = false;
+  }
+}
+
+chatSend.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+// ─── init ─────────────────────────────────────────────────────────────────────
+renderAll();
+
+if (getToken()) {
+  setSync('ok', '已同步 · ' + (syncTime() || '…'));
+  if (getGistId()) pullFromGist();
+} else {
+  setSync('', '未配置');
+}
+</script>
+
+</body>
+</html>
