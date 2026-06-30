@@ -276,7 +276,7 @@
       border: 1px solid var(--accent);
       border-radius: 8px;
       padding: 0 8px;
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
       font-family: inherit;
       color: var(--text);
@@ -807,7 +807,7 @@
       不用重新生成 GitHub token。这段备份码包含你的 token，请像密码一样保管，不要发给别人。
     </p>
     <button class="action-btn" id="export-settings-btn">导出备份码</button>
-    <textarea id="export-settings-out" readonly style="display:none;width:100%;height:80px;border:1px solid var(--border);border-radius:10px;padding:8px;font-size:12px;font-family:monospace;margin-bottom:10px;background:var(--surface);color:var(--text);"></textarea>
+    <textarea id="export-settings-out" readonly style="display:none;width:100%;height:80px;border:1px solid var(--border);border-radius:10px;padding:8px;font-size:16px;font-family:monospace;margin-bottom:10px;background:var(--surface);color:var(--text);"></textarea>
 
     <div class="field">
       <label>粘贴备份码并导入</label>
@@ -1049,8 +1049,11 @@ function renderStats() {
   const accountNames = new Set(accounts);
   loadRecords().forEach(r => { if (r.account) accountNames.add(r.account); });
 
-  html += '<hr style="margin:24px 0 14px;"><div class="sub-title">账户余额（点击可直接改）</div>';
-  html += Array.from(accountNames).map(name => {
+  const accountNamesArr = Array.from(accountNames);
+  const totalBal = accountNamesArr.reduce((s, n) => s + accountBalance(n), 0);
+  const totalColor = totalBal > 0 ? 'color:var(--income)' : totalBal < 0 ? 'color:#d93025' : '';
+  html += `<hr style="margin:24px 0 14px;"><div class="sub-title" style="display:flex;justify-content:space-between;align-items:center;"><span>账户余额</span><span style="font-size:15px;font-weight:700;${totalColor}">${fmtMoney(totalBal)}</span></div>`;
+  html += accountNamesArr.map(name => {
     const bal = accountBalance(name);
     return `
     <div class="account-row" data-account="${escapeHtml(name)}">
@@ -1075,7 +1078,6 @@ function renderStats() {
       input.placeholder = '支持算式，如 400-219';
       balanceEl.replaceWith(input);
       input.focus();
-      input.select();
 
       function evalExpr(str) {
         const s = str.replace(/[^0-9+\-*/.() ]/g, '').trim();
