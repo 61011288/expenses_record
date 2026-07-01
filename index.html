@@ -923,7 +923,10 @@ function deleteRecord(id) {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-const today = () => new Date().toISOString().slice(0, 10);
+function localDateStr(d = new Date()) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+const today = () => localDateStr();
 
 function fmtMoney(n) {
   return (Math.round(n * 100) / 100).toFixed(2);
@@ -996,7 +999,7 @@ function periodRange(period) {
     const day = now.getDay() || 7;
     const start = new Date(now);
     start.setDate(now.getDate() - day + 1);
-    return { start: start.toISOString().slice(0, 10), end: today() };
+    return { start: localDateStr(start), end: today() };
   }
   if (period === 'year') {
     return { start: now.getFullYear() + '-01-01', end: today() };
