@@ -49,6 +49,7 @@
       background: var(--bg);
       flex-shrink: 0;
       padding-top: var(--safe-top);
+      padding-right: 48px;
       position: relative;
     }
 
@@ -190,7 +191,7 @@
     .record-amount.income  { color: var(--income); }
 
     /* ── stats panel ── */
-    .stats-wrap {
+    .stats-wrap, .balance-wrap {
       flex: 1;
       padding: 12px 16px 90px;
       overflow-y: auto;
@@ -221,6 +222,33 @@
       font-weight: 600;
     }
 
+    .period-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .period-title {
+      flex: 1;
+      text-align: center;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .nav-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 24px;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .nav-btn:active { background: var(--surface); }
+
     .summary-row {
       display: flex;
       gap: 10px;
@@ -235,6 +263,52 @@
     .summary-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
     .summary-card .value { font-size: 18px; font-weight: 700; }
     .summary-card .value.income { color: var(--income); }
+
+    .chart-box {
+      margin-bottom: 18px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: var(--bg);
+    }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 12px;
+      white-space: nowrap;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .legend-dot.income { background: var(--income); }
+    .trend-chart {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .chart-empty {
+      height: 150px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
 
     .bar-row {
       display: flex;
@@ -270,7 +344,7 @@
     .account-row .balance.neg { color: #d93025; }
     .account-row .balance.pos { color: var(--income); }
     .account-row .balance-edit-input {
-      width: 100px;
+      width: 120px;
       height: 30px;
       text-align: right;
       border: 1px solid var(--accent);
@@ -282,6 +356,22 @@
       color: var(--text);
       background: var(--bg);
       outline: none;
+    }
+
+    .balance-total {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 18px;
+    }
+    .balance-total .label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .balance-total .value {
+      font-size: 28px;
+      font-weight: 800;
     }
 
     /* ── account management (settings) ── */
@@ -672,6 +762,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="bills">账单</div>
   <div class="tab" data-tab="stats">统计</div>
+  <div class="tab" data-tab="balance">余额</div>
   <button class="sync-btn" id="sync-btn" title="云备份" aria-label="云备份">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 18H6a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 16.5 8.5a.6.6 0 0 0 .04.2A4 4 0 0 1 19 18z"/></svg>
   </button>
@@ -683,6 +774,10 @@
 
 <div class="panel" id="panel-stats">
   <div class="stats-wrap" id="stats-wrap"></div>
+</div>
+
+<div class="panel" id="panel-balance">
+  <div class="balance-wrap" id="balance-wrap"></div>
 </div>
 
 <button class="chat-fab" id="chat-fab" title="AI 记账" aria-label="AI 记账">
@@ -992,20 +1087,129 @@ function escapeHtml(s) {
 
 // ─── render: stats ────────────────────────────────────────────────────────────
 let statsPeriod = 'month';
+let statsAnchor = new Date();
 
-function periodRange(period) {
-  const now = new Date();
+function dateFromStr(dateStr) {
+  return new Date(dateStr + 'T12:00:00');
+}
+
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function addMonths(date, months) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+function addYears(date, years) {
+  const d = new Date(date);
+  d.setFullYear(d.getFullYear() + years);
+  return d;
+}
+
+function daysBetween(start, end) {
+  return Math.round((dateFromStr(end) - dateFromStr(start)) / 86400000);
+}
+
+function periodRange(period, anchor = statsAnchor) {
+  const now = new Date(anchor);
   if (period === 'week') {
     const day = now.getDay() || 7;
     const start = new Date(now);
     start.setDate(now.getDate() - day + 1);
-    return { start: localDateStr(start), end: today() };
+    const end = addDays(start, 6);
+    return { start: localDateStr(start), end: localDateStr(end) };
   }
   if (period === 'year') {
-    return { start: now.getFullYear() + '-01-01', end: today() };
+    return { start: now.getFullYear() + '-01-01', end: now.getFullYear() + '-12-31' };
   }
   const m = String(now.getMonth() + 1).padStart(2, '0');
-  return { start: now.getFullYear() + '-' + m + '-01', end: today() };
+  const start = now.getFullYear() + '-' + m + '-01';
+  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { start, end: localDateStr(endDate) };
+}
+
+function periodTitle(period, range) {
+  const start = dateFromStr(range.start);
+  const end = dateFromStr(range.end);
+  if (period === 'week') return fmtDate(range.start) + ' - ' + fmtDate(range.end);
+  if (period === 'year') return start.getFullYear() + '年';
+  return start.getFullYear() + '年' + String(start.getMonth() + 1).padStart(2, '0') + '月';
+}
+
+function shiftStatsPeriod(dir) {
+  if (statsPeriod === 'week') statsAnchor = addDays(statsAnchor, dir * 7);
+  else if (statsPeriod === 'year') statsAnchor = addYears(statsAnchor, dir);
+  else statsAnchor = new Date(statsAnchor.getFullYear(), statsAnchor.getMonth() + dir, 1);
+  renderStats();
+}
+
+function trendBuckets(period, range, records) {
+  const buckets = [];
+  if (period === 'year') {
+    const year = dateFromStr(range.start).getFullYear();
+    for (let i = 0; i < 12; i++) {
+      buckets.push({
+        key: year + '-' + String(i + 1).padStart(2, '0'),
+        label: String(i + 1) + '月',
+        expense: 0,
+        income: 0,
+      });
+    }
+    records.forEach(r => {
+      const bucket = buckets.find(b => b.key === r.date.slice(0, 7));
+      if (bucket) bucket[r.type] += r.amount;
+    });
+    return buckets;
+  }
+
+  const count = daysBetween(range.start, range.end) + 1;
+  for (let i = 0; i < count; i++) {
+    const key = localDateStr(addDays(dateFromStr(range.start), i));
+    buckets.push({ key, label: fmtDate(key), expense: 0, income: 0 });
+  }
+  records.forEach(r => {
+    const bucket = buckets.find(b => b.key === r.date);
+    if (bucket) bucket[r.type] += r.amount;
+  });
+  return buckets;
+}
+
+function renderTrendChart(buckets) {
+  const hasData = buckets.some(b => b.expense > 0 || b.income > 0);
+  if (!hasData) return '<div class="chart-empty">这段时间还没有趋势数据</div>';
+
+  const w = 320, h = 170, left = 34, right = 10, top = 14, bottom = 28;
+  const values = buckets.flatMap(b => [b.expense, b.income]);
+  const maxVal = Math.max(...values, 1);
+  const xStep = buckets.length > 1 ? (w - left - right) / (buckets.length - 1) : 0;
+  const yFor = v => top + (1 - v / maxVal) * (h - top - bottom);
+  const pointFor = (b, i, type) => (left + i * xStep).toFixed(1) + ',' + yFor(b[type]).toFixed(1);
+  const expensePoints = buckets.map((b, i) => pointFor(b, i, 'expense')).join(' ');
+  const incomePoints = buckets.map((b, i) => pointFor(b, i, 'income')).join(' ');
+  const grid = [0, 0.5, 1].map(p => {
+    const y = top + p * (h - top - bottom);
+    const label = fmtMoney(maxVal * (1 - p));
+    return `<line x1="${left}" y1="${y}" x2="${w - right}" y2="${y}" stroke="#e5e5ea" stroke-width="1"/><text x="0" y="${y + 4}" fill="#8e8e93" font-size="10">${label}</text>`;
+  }).join('');
+  const labelEvery = Math.max(1, Math.ceil(buckets.length / 6));
+  const labels = buckets.map((b, i) => {
+    if (i % labelEvery !== 0 && i !== buckets.length - 1) return '';
+    const x = left + i * xStep;
+    return `<text x="${x}" y="${h - 7}" fill="#8e8e93" font-size="10" text-anchor="middle">${b.label}</text>`;
+  }).join('');
+
+  return `
+    <svg class="trend-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="收支趋势图">
+      ${grid}
+      <polyline points="${expensePoints}" fill="none" stroke="#4f9cf9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="${incomePoints}" fill="none" stroke="#34a853" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${labels}
+    </svg>`;
 }
 
 function renderStats() {
@@ -1022,18 +1226,35 @@ function renderStats() {
   });
   const catList = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
   const maxCat = catList.length ? catList[0][1] : 0;
+  const buckets = trendBuckets(statsPeriod, { start, end }, records);
 
   let html = `
     <div class="period-pills">
-      <button class="period-pill ${statsPeriod === 'week' ? 'selected' : ''}" data-period="week">本周</button>
-      <button class="period-pill ${statsPeriod === 'month' ? 'selected' : ''}" data-period="month">本月</button>
-      <button class="period-pill ${statsPeriod === 'year' ? 'selected' : ''}" data-period="year">本年</button>
+      <button class="period-pill ${statsPeriod === 'week' ? 'selected' : ''}" data-period="week">周</button>
+      <button class="period-pill ${statsPeriod === 'month' ? 'selected' : ''}" data-period="month">月</button>
+      <button class="period-pill ${statsPeriod === 'year' ? 'selected' : ''}" data-period="year">年</button>
+    </div>
+    <div class="period-nav">
+      <button class="nav-btn" data-shift="-1" aria-label="上一段">‹</button>
+      <div class="period-title">${periodTitle(statsPeriod, { start, end })}</div>
+      <button class="nav-btn" data-shift="1" aria-label="下一段">›</button>
     </div>
     <div class="summary-row">
       <div class="summary-card"><div class="label">支出</div><div class="value">${fmtMoney(totalExpense)}</div></div>
       <div class="summary-card"><div class="label">收入</div><div class="value income">${fmtMoney(totalIncome)}</div></div>
       <div class="summary-card"><div class="label">结余</div><div class="value">${fmtMoney(totalIncome - totalExpense)}</div></div>
-    </div>`;
+    </div>
+    <div class="chart-box">
+      <div class="chart-head">
+        <span>收支趋势</span>
+        <span class="chart-legend">
+          <span class="legend-item"><span class="legend-dot"></span>支出</span>
+          <span class="legend-item"><span class="legend-dot income"></span>收入</span>
+        </span>
+      </div>
+      ${renderTrendChart(buckets)}
+    </div>
+    <div class="sub-title">支出分类</div>`;
 
   if (catList.length === 0) {
     html += '<div class="empty-state" style="flex:none;padding:40px 0;"><p>这段时间还没有支出记录</p></div>';
@@ -1046,8 +1267,22 @@ function renderStats() {
       </div>`).join('');
   }
 
-  // account balances: cumulative net (income − expense), plus any manual correction,
-  // not period-filtered — this is meant to track the real running balance
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.period-pill').forEach(p => {
+    p.addEventListener('click', () => {
+      statsPeriod = p.dataset.period;
+      statsAnchor = new Date();
+      renderStats();
+    });
+  });
+  wrap.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => shiftStatsPeriod(parseInt(btn.dataset.shift, 10)));
+  });
+}
+
+function renderBalance() {
+  const wrap = document.getElementById('balance-wrap');
   const accounts = loadAccounts();
   const accountNames = new Set(accounts);
   loadRecords().forEach(r => { if (r.account) accountNames.add(r.account); });
@@ -1055,7 +1290,12 @@ function renderStats() {
   const accountNamesArr = Array.from(accountNames);
   const totalBal = accountNamesArr.reduce((s, n) => s + accountBalance(n), 0);
   const totalColor = totalBal > 0 ? 'color:var(--income)' : totalBal < 0 ? 'color:#d93025' : '';
-  html += `<hr style="margin:24px 0 14px;"><div class="sub-title" style="display:flex;justify-content:space-between;align-items:center;"><span>账户余额</span><span style="font-size:15px;font-weight:700;${totalColor}">${fmtMoney(totalBal)}</span></div>`;
+  let html = `
+    <div class="balance-total">
+      <div class="label">总余额</div>
+      <div class="value" style="${totalColor}">${fmtMoney(totalBal)}</div>
+    </div>
+    <div class="sub-title">账户余额</div>`;
   html += accountNamesArr.map(name => {
     const bal = accountBalance(name);
     return `
@@ -1094,25 +1334,22 @@ function renderStats() {
         done = true;
         const val = evalExpr(input.value);
         if (!isNaN(val) && isFinite(val)) setAccountBalance(name, val);
-        renderStats();
+        renderBalance();
       }
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        if (e.key === 'Escape') { done = true; renderStats(); }
+        if (e.key === 'Escape') { done = true; renderBalance(); }
       });
       input.addEventListener('click', e => e.stopPropagation());
     });
-  });
-
-  wrap.querySelectorAll('.period-pill').forEach(p => {
-    p.addEventListener('click', () => { statsPeriod = p.dataset.period; renderStats(); });
   });
 }
 
 function renderAll() {
   renderBills();
   renderStats();
+  renderBalance();
 }
 
 // ─── tabs ─────────────────────────────────────────────────────────────────────
@@ -1127,6 +1364,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     panel.classList.add('active');
     panel.style.display = 'flex';
     if (activeTab === 'stats') renderStats();
+    if (activeTab === 'balance') renderBalance();
   });
 });
 
