@@ -1441,6 +1441,13 @@ function renderAll() {
 
 // ─── tabs ─────────────────────────────────────────────────────────────────────
 let activeTab = 'bills';
+const chatFab = document.getElementById('chat-fab');
+const addFab = document.getElementById('fab');
+function syncBillActionsVisibility() {
+  const visible = activeTab === 'bills';
+  chatFab.style.display = visible ? 'flex' : 'none';
+  addFab.style.display = visible ? 'flex' : 'none';
+}
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', function () {
     activeTab = this.dataset.tab;
@@ -1450,10 +1457,12 @@ document.querySelectorAll('.tab').forEach(tab => {
     const panel = document.getElementById('panel-' + activeTab);
     panel.classList.add('active');
     panel.style.display = 'flex';
+    syncBillActionsVisibility();
     if (activeTab === 'stats') renderStats();
     if (activeTab === 'balance') renderBalance();
   });
 });
+syncBillActionsVisibility();
 
 // ─── add/edit sheet ───────────────────────────────────────────────────────────
 const overlay   = document.getElementById('overlay');
