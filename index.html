@@ -18,8 +18,8 @@
     :root {
       --accent: #4f9cf9;
       --accent-light: rgba(79, 156, 249, 0.1);
-      --income: #34a853;
-      --income-light: rgba(52, 168, 83, 0.1);
+      --income: #16A085;
+      --income-light: rgba(22, 160, 133, 0.1);
       --bg: #ffffff;
       --surface: #f5f5f7;
       --border: #e5e5ea;
@@ -370,6 +370,22 @@
       margin-bottom: 6px;
     }
     .balance-total .value {
+      font-size: 28px;
+      font-weight: 800;
+    }
+    .balance-equation {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      flex-wrap: wrap;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .balance-equation .credit {
+      color: var(--muted);
+    }
+    .balance-equation .result {
+      color: var(--text);
       font-size: 28px;
       font-weight: 800;
     }
@@ -807,14 +823,14 @@
       <div class="cat-pills" id="cat-pills"></div>
     </div>
 
-    <div class="field" id="account-field">
-      <label>账户</label>
-      <div class="cat-pills" id="account-pills"></div>
-    </div>
-
     <div class="field">
       <label>日期</label>
       <input type="date" id="f-date">
+    </div>
+
+    <div class="field" id="account-field">
+      <label id="account-label">账户</label>
+      <div class="cat-pills" id="account-pills"></div>
     </div>
 
     <div class="field">
@@ -862,11 +878,18 @@
 
     <hr>
 
-    <div class="sub-title">账户管理</div>
+    <div class="sub-title">现金账户</div>
     <div id="account-manage-list"></div>
     <div class="account-add-row">
       <input type="text" id="new-account-name" placeholder="新账户名称，例：Chase Checking" autocomplete="off">
       <button id="add-account-btn">＋</button>
+    </div>
+
+    <div class="sub-title" style="margin-top:22px;">信用卡账户</div>
+    <div id="credit-manage-list"></div>
+    <div class="account-add-row">
+      <input type="text" id="new-credit-name" placeholder="新信用卡名称，例：Amazon" autocomplete="off">
+      <button id="add-credit-btn">＋</button>
     </div>
 
     <hr>
@@ -952,6 +975,7 @@ let CATS = loadCats();
 
 // ─── accounts (money source) ────────────────────────────────────────────────
 const DEFAULT_ACCOUNTS = ['BoA Checking', 'BoA Saving', 'Chase Checking', 'Chase Saving'];
+const DEFAULT_CREDIT_ACCOUNTS = ['BoA Credit', 'BoA Travel', 'Chase Unlimited', 'Chase SP', 'Amazon'];
 
 function loadAccounts() {
   try {
@@ -965,6 +989,18 @@ function saveAccounts(accounts) {
   schedulePush();
 }
 
+function loadCreditAccounts() {
+  try {
+    const a = JSON.parse(localStorage.getItem('credit_accounts') || 'null');
+    return Array.isArray(a) && a.length ? a : DEFAULT_CREDIT_ACCOUNTS.slice();
+  } catch { return DEFAULT_CREDIT_ACCOUNTS.slice(); }
+}
+
+function saveCreditAccounts(accounts) {
+  localStorage.setItem('credit_accounts', JSON.stringify(accounts));
+  schedulePush();
+}
+
 // manual balance correction per account: lets the displayed balance be set directly
 // (e.g. to seed your real current balance) instead of only ever being the sum of records
 function loadAccountAdjustments() {
@@ -973,6 +1009,15 @@ function loadAccountAdjustments() {
 
 function saveAccountAdjustments(adj) {
   localStorage.setItem('account_adjustments', JSON.stringify(adj));
+  schedulePush();
+}
+
+function loadCreditAdjustments() {
+  try { return JSON.parse(localStorage.getItem('credit_adjustments') || '{}'); } catch { return {}; }
+}
+
+function saveCreditAdjustments(adj) {
+  localStorage.setItem('credit_adjustments', JSON.stringify(adj));
   schedulePush();
 }
 
@@ -991,6 +1036,23 @@ function setAccountBalance(name, newBalance) {
   const adj = loadAccountAdjustments();
   adj[name] = newBalance - accountRecordedNet(name);
   saveAccountAdjustments(adj);
+}
+
+function creditRecordedSpend(name) {
+  return loadRecords()
+    .filter(r => r.account === name && r.type === 'expense')
+    .reduce((s, r) => s + r.amount, 0);
+}
+
+function creditOutstanding(name) {
+  const adj = loadCreditAdjustments();
+  return creditRecordedSpend(name) + (adj[name] || 0);
+}
+
+function setCreditOutstanding(name, newAmount) {
+  const adj = loadCreditAdjustments();
+  adj[name] = newAmount - creditRecordedSpend(name);
+  saveCreditAdjustments(adj);
 }
 
 // ─── state ───────────────────────────────────────────────────────────────────
@@ -1207,7 +1269,7 @@ function renderTrendChart(buckets) {
     <svg class="trend-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="收支趋势图">
       ${grid}
       <polyline points="${expensePoints}" fill="none" stroke="#4f9cf9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <polyline points="${incomePoints}" fill="none" stroke="#34a853" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="${incomePoints}" fill="none" stroke="#16A085" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       ${labels}
     </svg>`;
 }
@@ -1285,15 +1347,26 @@ function renderBalance() {
   const wrap = document.getElementById('balance-wrap');
   const accounts = loadAccounts();
   const accountNames = new Set(accounts);
-  loadRecords().forEach(r => { if (r.account) accountNames.add(r.account); });
+  loadRecords().forEach(r => { if (r.account && r.type === 'income') accountNames.add(r.account); });
+  const creditAccounts = loadCreditAccounts();
+  const creditNames = new Set(creditAccounts);
+  loadRecords().forEach(r => { if (r.account && r.type === 'expense' && creditAccounts.includes(r.account)) creditNames.add(r.account); });
 
   const accountNamesArr = Array.from(accountNames);
-  const totalBal = accountNamesArr.reduce((s, n) => s + accountBalance(n), 0);
-  const totalColor = totalBal > 0 ? 'color:var(--income)' : totalBal < 0 ? 'color:#d93025' : '';
+  const creditNamesArr = Array.from(creditNames);
+  const cashTotal = accountNamesArr.reduce((s, n) => s + accountBalance(n), 0);
+  const creditTotal = creditNamesArr.reduce((s, n) => s + creditOutstanding(n), 0);
+  const disposableTotal = cashTotal - creditTotal;
+  const totalColor = disposableTotal > 0 ? 'color:var(--income)' : disposableTotal < 0 ? 'color:#d93025' : '';
   let html = `
     <div class="balance-total">
-      <div class="label">总余额</div>
-      <div class="value" style="${totalColor}">${fmtMoney(totalBal)}</div>
+      <div class="label">总金额</div>
+      <div class="balance-equation">
+        <span>${fmtMoney(cashTotal)}</span>
+        <span class="credit">- ${fmtMoney(creditTotal)}</span>
+        <span>=</span>
+        <span class="result" style="${totalColor}">${fmtMoney(disposableTotal)}</span>
+      </div>
     </div>
     <div class="sub-title">账户余额</div>`;
   html += accountNamesArr.map(name => {
@@ -1304,15 +1377,31 @@ function renderBalance() {
       <span class="balance ${bal > 0 ? 'pos' : bal < 0 ? 'neg' : ''}">${fmtMoney(bal)}</span>
     </div>`;
   }).join('');
+  html += '<div class="sub-title" style="margin-top:22px;">信用卡</div>';
+  html += creditNamesArr.map(name => {
+    const amt = creditOutstanding(name);
+    return `
+    <div class="account-row credit-row" data-credit="${escapeHtml(name)}">
+      <span class="name">${escapeHtml(name)}</span>
+      <span class="balance">${fmtMoney(amt)}</span>
+    </div>`;
+  }).join('');
 
   wrap.innerHTML = html;
 
-  wrap.querySelectorAll('.account-row').forEach(row => {
+  function evalExpr(str) {
+    const s = str.replace(/[^0-9+\-*/.() ]/g, '').trim();
+    if (!s) return NaN;
+    try { return Function('"use strict"; return (' + s + ')')(); } catch { return NaN; }
+  }
+
+  function bindEditableRows(selector, getCurrent, saveValue) {
+    wrap.querySelectorAll(selector).forEach(row => {
     row.addEventListener('click', () => {
       if (row.querySelector('.balance-edit-input')) return;
-      const name = row.dataset.account;
+      const name = row.dataset.account || row.dataset.credit;
       const balanceEl = row.querySelector('.balance');
-      const current = accountBalance(name);
+      const current = getCurrent(name);
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'balance-edit-input';
@@ -1322,18 +1411,12 @@ function renderBalance() {
       balanceEl.replaceWith(input);
       input.focus();
 
-      function evalExpr(str) {
-        const s = str.replace(/[^0-9+\-*/.() ]/g, '').trim();
-        if (!s) return NaN;
-        try { return Function('"use strict"; return (' + s + ')')(); } catch { return NaN; }
-      }
-
       let done = false;
       function commit() {
         if (done) return;
         done = true;
         const val = evalExpr(input.value);
-        if (!isNaN(val) && isFinite(val)) setAccountBalance(name, val);
+        if (!isNaN(val) && isFinite(val)) saveValue(name, val);
         renderBalance();
       }
       input.addEventListener('blur', commit);
@@ -1344,6 +1427,10 @@ function renderBalance() {
       input.addEventListener('click', e => e.stopPropagation());
     });
   });
+  }
+
+  bindEditableRows('.account-row[data-account]', accountBalance, setAccountBalance);
+  bindEditableRows('.account-row[data-credit]', creditOutstanding, setCreditOutstanding);
 }
 
 function renderAll() {
@@ -1376,6 +1463,7 @@ const fNote     = document.getElementById('f-note');
 const catPillsEl = document.getElementById('cat-pills');
 const accountPillsEl = document.getElementById('account-pills');
 const accountFieldEl = document.getElementById('account-field');
+const accountLabelEl = document.getElementById('account-label');
 const btnSubmit = document.getElementById('btn-submit');
 const typeToggle = document.getElementById('type-toggle');
 
@@ -1487,10 +1575,11 @@ function enterEdit(wrap) {
 }
 
 function renderAccountPills() {
-  const accounts = loadAccounts();
-  const show = accounts.length && selectedType === 'income';
+  const accounts = selectedType === 'income' ? loadAccounts() : loadCreditAccounts();
+  const show = accounts.length > 0;
   accountFieldEl.style.display = show ? '' : 'none';
   if (!show) { selectedAccount = null; return; }
+  accountLabelEl.textContent = selectedType === 'income' ? '现金账户' : '信用卡';
   if (!accounts.includes(selectedAccount)) selectedAccount = accounts[0];
   accountPillsEl.innerHTML = accounts.map(a =>
     `<button class="cat-pill${a === selectedAccount ? ' selected' : ''}" data-acc="${escapeHtml(a)}">${escapeHtml(a)}</button>`
@@ -1556,7 +1645,8 @@ btnSubmit.addEventListener('click', () => {
   const amount = parseFloat(fAmount.value);
   if (!amount || amount <= 0) { fAmount.classList.add('error'); ok = false; }
   if (!selectedCat) { catPillsEl.classList.add('error'); ok = false; }
-  if (selectedType === 'income' && loadAccounts().length && !selectedAccount) { accountPillsEl.classList.add('error'); ok = false; }
+  const selectableAccounts = selectedType === 'income' ? loadAccounts() : loadCreditAccounts();
+  if (selectableAccounts.length && !selectedAccount) { accountPillsEl.classList.add('error'); ok = false; }
   if (!ok) return;
 
   const data = {
@@ -1617,7 +1707,9 @@ const TOKEN_KEY = 'gh_token';
 const GIST_KEY  = 'gist_id';
 const GIST_FILE = 'expenses.json';
 const GIST_FILE_ADJ = 'account_adjustments.json';
+const GIST_FILE_CREDIT_ADJ = 'credit_adjustments.json';
 const GIST_FILE_ACCOUNTS = 'accounts.json';
+const GIST_FILE_CREDIT_ACCOUNTS = 'credit_accounts.json';
 const GIST_FILE_CATS = 'categories.json';
 const syncBtn    = document.getElementById('sync-btn');
 const syncOverlay = document.getElementById('sync-overlay');
@@ -1657,7 +1749,9 @@ async function pushToGist() {
     files: {
       [GIST_FILE]: { content: localStorage.getItem('expense_records') || '[]' },
       [GIST_FILE_ADJ]: { content: localStorage.getItem('account_adjustments') || '{}' },
+      [GIST_FILE_CREDIT_ADJ]: { content: localStorage.getItem('credit_adjustments') || '{}' },
       [GIST_FILE_ACCOUNTS]: { content: localStorage.getItem('accounts') || JSON.stringify(DEFAULT_ACCOUNTS) },
+      [GIST_FILE_CREDIT_ACCOUNTS]: { content: localStorage.getItem('credit_accounts') || JSON.stringify(DEFAULT_CREDIT_ACCOUNTS) },
       [GIST_FILE_CATS]: { content: localStorage.getItem('categories') || JSON.stringify(DEFAULT_CATS) },
     },
   });
@@ -1689,11 +1783,15 @@ async function pullFromGist() {
     const data = await res.json();
     const file = data.files && data.files[GIST_FILE];
     const fileAdj = data.files && data.files[GIST_FILE_ADJ];
+    const fileCreditAdj = data.files && data.files[GIST_FILE_CREDIT_ADJ];
     const fileAccounts = data.files && data.files[GIST_FILE_ACCOUNTS];
+    const fileCreditAccounts = data.files && data.files[GIST_FILE_CREDIT_ACCOUNTS];
     const fileCats = data.files && data.files[GIST_FILE_CATS];
     if (file && file.content) localStorage.setItem('expense_records', file.content);
     if (fileAdj && fileAdj.content) localStorage.setItem('account_adjustments', fileAdj.content);
+    if (fileCreditAdj && fileCreditAdj.content) localStorage.setItem('credit_adjustments', fileCreditAdj.content);
     if (fileAccounts && fileAccounts.content) localStorage.setItem('accounts', fileAccounts.content);
+    if (fileCreditAccounts && fileCreditAccounts.content) localStorage.setItem('credit_accounts', fileCreditAccounts.content);
     if (fileCats && fileCats.content) localStorage.setItem('categories', fileCats.content);
     CATS = loadCats();
     renderAll();
@@ -1741,23 +1839,25 @@ document.getElementById('s-save').addEventListener('click', async () => {
 document.getElementById('s-pull').addEventListener('click', pullFromGist);
 
 // ─── account management ───────────────────────────────────────────────────────
-function renderAccountManageList() {
-  const accounts = loadAccounts();
-  const listEl = document.getElementById('account-manage-list');
+function renderManageList(listEl, accounts, saveFn, emptyText) {
   listEl.innerHTML = accounts.map((a, i) => `
     <div class="account-manage-row">
       <span class="name">${escapeHtml(a)}</span>
       <button class="remove" data-i="${i}">删除</button>
-    </div>`).join('') || '<p class="sync-help">还没有账户，添加一个吧</p>';
+    </div>`).join('') || `<p class="sync-help">${emptyText}</p>`;
 
   listEl.querySelectorAll('.remove').forEach(btn => {
     btn.addEventListener('click', () => {
-      const accounts = loadAccounts();
       accounts.splice(parseInt(btn.dataset.i, 10), 1);
-      saveAccounts(accounts);
+      saveFn(accounts);
       renderAccountManageList();
     });
   });
+}
+
+function renderAccountManageList() {
+  renderManageList(document.getElementById('account-manage-list'), loadAccounts(), saveAccounts, '还没有现金账户，添加一个吧');
+  renderManageList(document.getElementById('credit-manage-list'), loadCreditAccounts(), saveCreditAccounts, '还没有信用卡账户，添加一个吧');
 }
 
 document.getElementById('add-account-btn').addEventListener('click', () => {
@@ -1766,6 +1866,16 @@ document.getElementById('add-account-btn').addEventListener('click', () => {
   if (!name) return;
   const accounts = loadAccounts();
   if (!accounts.includes(name)) { accounts.push(name); saveAccounts(accounts); }
+  input.value = '';
+  renderAccountManageList();
+});
+
+document.getElementById('add-credit-btn').addEventListener('click', () => {
+  const input = document.getElementById('new-credit-name');
+  const name = input.value.trim();
+  if (!name) return;
+  const accounts = loadCreditAccounts();
+  if (!accounts.includes(name)) { accounts.push(name); saveCreditAccounts(accounts); }
   input.value = '';
   renderAccountManageList();
 });
@@ -1781,6 +1891,7 @@ document.getElementById('export-settings-btn').addEventListener('click', async (
     proxy: getProxy(),
     model: getModel(),
     accounts: loadAccounts(),
+    creditAccounts: loadCreditAccounts(),
   };
   const code = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
   const out = document.getElementById('export-settings-out');
@@ -1805,6 +1916,7 @@ document.getElementById('import-settings-btn').addEventListener('click', async (
     if (payload.proxy) localStorage.setItem(AI_PROXY, payload.proxy);
     if (payload.model) localStorage.setItem(AI_MODEL, payload.model);
     if (Array.isArray(payload.accounts) && payload.accounts.length) saveAccounts(payload.accounts);
+    if (Array.isArray(payload.creditAccounts) && payload.creditAccounts.length) saveCreditAccounts(payload.creditAccounts);
 
     document.getElementById('s-token').value = getToken();
     document.getElementById('ai-proxy').value = getProxy();
@@ -1909,19 +2021,20 @@ function appendMsg(kind, text) {
 }
 
 function appendConfirmCard(expense) {
-  const accounts = loadAccounts();
+  const accounts = expense.type === 'income' ? loadAccounts() : loadCreditAccounts();
   let chosenAccount = accounts[0] || '';
 
   const card = document.createElement('div');
   card.className = 'confirm-card';
   const typeLabel = expense.type === 'income' ? '收入' : '支出';
+  const accountLabel = expense.type === 'income' ? '现金账户' : '信用卡';
   card.innerHTML = `
     <div class="confirm-row"><span class="k">类型</span><span class="v ${expense.type}">${typeLabel}</span></div>
     <div class="confirm-row"><span class="k">金额</span><span class="v">${fmtMoney(expense.amount)}</span></div>
     <div class="confirm-row"><span class="k">类别</span><span class="v">${expense.category}</span></div>
     <div class="confirm-row"><span class="k">日期</span><span class="v">${expense.date}</span></div>
     ${expense.note ? `<div class="confirm-row"><span class="k">备注</span><span class="v">${escapeHtml(expense.note)}</span></div>` : ''}
-    ${accounts.length ? `<div class="field" style="margin:10px 0 0;"><label>账户</label><div class="cat-pills confirm-acc-pills"></div></div>` : ''}
+    ${accounts.length ? `<div class="field" style="margin:10px 0 0;"><label>${accountLabel}</label><div class="cat-pills confirm-acc-pills"></div></div>` : ''}
     <div class="confirm-actions">
       <button class="btn-cancel">取消</button>
       <button class="btn-ok">确认添加</button>
