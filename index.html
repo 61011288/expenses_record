@@ -296,6 +296,7 @@
       background: var(--accent);
     }
     .legend-dot.income { background: var(--income); }
+    .legend-dot.living { background: #f0b429; }
     .trend-chart {
       width: 100%;
       height: auto;
@@ -1220,39 +1221,50 @@ function trendBuckets(period, range, records) {
         label: String(i + 1) + '月',
         expense: 0,
         income: 0,
+        rent: 0,
+        living: 0,
       });
     }
     records.forEach(r => {
       const bucket = buckets.find(b => b.key === r.date.slice(0, 7));
-      if (bucket) bucket[r.type] += r.amount;
+      if (bucket) {
+        bucket[r.type] += r.amount;
+        if (r.type === 'expense' && r.category === '租金') bucket.rent += r.amount;
+      }
     });
+    buckets.forEach(b => { b.living = Math.max(0, b.expense - b.rent); });
     return buckets;
   }
 
   const count = daysBetween(range.start, range.end) + 1;
   for (let i = 0; i < count; i++) {
     const key = localDateStr(addDays(dateFromStr(range.start), i));
-    buckets.push({ key, label: fmtDate(key), expense: 0, income: 0 });
+    buckets.push({ key, label: fmtDate(key), expense: 0, income: 0, rent: 0, living: 0 });
   }
   records.forEach(r => {
     const bucket = buckets.find(b => b.key === r.date);
-    if (bucket) bucket[r.type] += r.amount;
+    if (bucket) {
+      bucket[r.type] += r.amount;
+      if (r.type === 'expense' && r.category === '租金') bucket.rent += r.amount;
+    }
   });
+  buckets.forEach(b => { b.living = Math.max(0, b.expense - b.rent); });
   return buckets;
 }
 
-function renderTrendChart(buckets) {
-  const hasData = buckets.some(b => b.expense > 0 || b.income > 0);
+function renderTrendChart(buckets, showLiving) {
+  const hasData = buckets.some(b => b.expense > 0 || b.income > 0 || (showLiving && b.living > 0));
   if (!hasData) return '<div class="chart-empty">这段时间还没有趋势数据</div>';
 
   const w = 320, h = 170, left = 34, right = 10, top = 14, bottom = 28;
-  const values = buckets.flatMap(b => [b.expense, b.income]);
+  const values = buckets.flatMap(b => showLiving ? [b.expense, b.income, b.living] : [b.expense, b.income]);
   const maxVal = Math.max(...values, 1);
   const xStep = buckets.length > 1 ? (w - left - right) / (buckets.length - 1) : 0;
   const yFor = v => top + (1 - v / maxVal) * (h - top - bottom);
   const pointFor = (b, i, type) => (left + i * xStep).toFixed(1) + ',' + yFor(b[type]).toFixed(1);
   const expensePoints = buckets.map((b, i) => pointFor(b, i, 'expense')).join(' ');
   const incomePoints = buckets.map((b, i) => pointFor(b, i, 'income')).join(' ');
+  const livingPoints = buckets.map((b, i) => pointFor(b, i, 'living')).join(' ');
   const grid = [0, 0.5, 1].map(p => {
     const y = top + p * (h - top - bottom);
     const label = fmtMoney(maxVal * (1 - p));
@@ -1270,6 +1282,7 @@ function renderTrendChart(buckets) {
       ${grid}
       <polyline points="${expensePoints}" fill="none" stroke="#4f9cf9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       <polyline points="${incomePoints}" fill="none" stroke="#16A085" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${showLiving ? `<polyline points="${livingPoints}" fill="none" stroke="#f0b429" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
       ${labels}
     </svg>`;
 }
@@ -1289,6 +1302,7 @@ function renderStats() {
   const catList = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
   const maxCat = catList.length ? catList[0][1] : 0;
   const buckets = trendBuckets(statsPeriod, { start, end }, records);
+  const showLiving = statsPeriod === 'month' || statsPeriod === 'year';
 
   let html = `
     <div class="period-pills">
@@ -1312,9 +1326,10 @@ function renderStats() {
         <span class="chart-legend">
           <span class="legend-item"><span class="legend-dot"></span>支出</span>
           <span class="legend-item"><span class="legend-dot income"></span>收入</span>
+          ${showLiving ? '<span class="legend-item"><span class="legend-dot living"></span>生活费</span>' : ''}
         </span>
       </div>
-      ${renderTrendChart(buckets)}
+      ${renderTrendChart(buckets, showLiving)}
     </div>
     <div class="sub-title">支出分类</div>`;
 
