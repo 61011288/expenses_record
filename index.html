@@ -396,19 +396,42 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       padding: 9px 0;
       border-bottom: 1px solid var(--border);
     }
     .account-manage-row:last-child { border-bottom: none; }
-    .account-manage-row .name { font-size: 14px; }
+    .account-manage-row .name {
+      flex: 1;
+      min-width: 0;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+    .account-manage-row .actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .account-manage-row .edit,
+    .account-manage-row .save,
+    .account-manage-row .cancel,
     .account-manage-row .remove {
       background: none;
       border: none;
-      color: #d93025;
+      color: var(--accent);
       font-size: 13px;
       cursor: pointer;
       padding: 4px 8px;
       -webkit-tap-highlight-color: transparent;
+    }
+    .account-manage-row .remove { color: #d93025; }
+    .account-manage-row .cancel { color: var(--muted); }
+    .account-manage-row .rename-input {
+      flex: 1;
+      min-width: 0;
+      height: 34px;
+      font-size: 15px;
+      padding: 6px 8px;
     }
     .account-add-row { display: flex; gap: 8px; margin-top: 12px; }
     .account-add-row input { flex: 1; }
@@ -1148,6 +1171,10 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // ─── render: stats ────────────────────────────────────────────────────────────
 let statsPeriod = 'month';
 let statsAnchor = new Date();
@@ -1387,7 +1414,7 @@ function renderBalance() {
   html += accountNamesArr.map(name => {
     const bal = accountBalance(name);
     return `
-    <div class="account-row" data-account="${escapeHtml(name)}">
+    <div class="account-row" data-account="${escapeAttr(name)}">
       <span class="name">${escapeHtml(name)}</span>
       <span class="balance ${bal > 0 ? 'pos' : bal < 0 ? 'neg' : ''}">${fmtMoney(bal)}</span>
     </div>`;
@@ -1396,7 +1423,7 @@ function renderBalance() {
   html += creditNamesArr.map(name => {
     const amt = creditOutstanding(name);
     return `
-    <div class="account-row credit-row" data-credit="${escapeHtml(name)}">
+    <div class="account-row credit-row" data-credit="${escapeAttr(name)}">
       <span class="name">${escapeHtml(name)}</span>
       <span class="balance">${fmtMoney(amt)}</span>
     </div>`;
@@ -1606,7 +1633,7 @@ function renderAccountPills() {
   accountLabelEl.textContent = selectedType === 'income' ? '现金账户' : '信用卡';
   if (!accounts.includes(selectedAccount)) selectedAccount = accounts[0];
   accountPillsEl.innerHTML = accounts.map(a =>
-    `<button class="cat-pill${a === selectedAccount ? ' selected' : ''}" data-acc="${escapeHtml(a)}">${escapeHtml(a)}</button>`
+    `<button class="cat-pill${a === selectedAccount ? ' selected' : ''}" data-acc="${escapeAttr(a)}">${escapeHtml(a)}</button>`
   ).join('');
   accountPillsEl.querySelectorAll('.cat-pill').forEach(p => {
     p.addEventListener('click', () => { selectedAccount = p.dataset.acc; renderAccountPills(); });
@@ -1739,6 +1766,7 @@ const syncBtn    = document.getElementById('sync-btn');
 const syncOverlay = document.getElementById('sync-overlay');
 const syncStatus = document.getElementById('sync-status');
 let pushTimer = null;
+let suppressPush = false;
 
 const getToken  = () => localStorage.getItem(TOKEN_KEY) || '';
 const getGistId = () => localStorage.getItem(GIST_KEY) || '';
@@ -1828,6 +1856,7 @@ async function pullFromGist() {
 }
 
 function schedulePush() {
+  if (suppressPush) return;
   if (!getToken()) return;
   clearTimeout(pushTimer);
   pushTimer = setTimeout(pushToGist, 800);
@@ -1863,45 +1892,174 @@ document.getElementById('s-save').addEventListener('click', async () => {
 document.getElementById('s-pull').addEventListener('click', pullFromGist);
 
 // ─── account management ───────────────────────────────────────────────────────
-function renderManageList(listEl, accounts, saveFn, emptyText) {
+let editingAccount = null;
+
+function moveAdjustmentName(loadFn, saveFn, oldName, newName) {
+  const adj = loadFn();
+  if (!Object.prototype.hasOwnProperty.call(adj, oldName)) return;
+  adj[newName] = (adj[newName] || 0) + adj[oldName];
+  delete adj[oldName];
+  saveFn(adj);
+}
+
+function renameRecordsAccount(oldName, newName, recordType) {
+  const records = loadRecords();
+  let changed = false;
+  records.forEach(r => {
+    if (r.account === oldName && r.type === recordType) {
+      r.account = newName;
+      changed = true;
+    }
+  });
+  if (changed) saveRecords(records);
+}
+
+function refreshAfterAccountChange() {
+  renderAccountManageList();
+  renderAccountPills();
+  renderAll();
+}
+
+function runAccountBatchUpdate(fn) {
+  suppressPush = true;
+  try {
+    fn();
+  } finally {
+    suppressPush = false;
+  }
+  schedulePush();
+}
+
+function renameManagedAccount(accounts, saveFn, index, newName, options) {
+  const oldName = accounts[index];
+  const name = newName.trim();
+  if (!name || name === oldName) {
+    editingAccount = null;
+    renderAccountManageList();
+    return;
+  }
+  if (accounts.some((a, i) => i !== index && a === name)) {
+    alert('已经有这个账户名了');
+    return;
+  }
+
+  runAccountBatchUpdate(() => {
+    accounts[index] = name;
+    saveFn(accounts);
+    renameRecordsAccount(oldName, name, options.recordType);
+    moveAdjustmentName(options.loadAdjustments, options.saveAdjustments, oldName, name);
+  });
+  if (selectedAccount === oldName) selectedAccount = name;
+  editingAccount = null;
+  refreshAfterAccountChange();
+}
+
+function renderManageList(listEl, accounts, saveFn, emptyText, options) {
   listEl.innerHTML = accounts.map((a, i) => `
     <div class="account-manage-row">
-      <span class="name">${escapeHtml(a)}</span>
-      <button class="remove" data-i="${i}">删除</button>
+      ${editingAccount === options.kind + ':' + i
+        ? `<input class="rename-input" type="text" value="${escapeAttr(a)}" data-i="${i}" autocomplete="off">`
+        : `<span class="name">${escapeHtml(a)}</span>`}
+      <span class="actions">
+        ${editingAccount === options.kind + ':' + i
+          ? `<button class="save" data-i="${i}">保存</button><button class="cancel" data-i="${i}">取消</button>`
+          : `<button class="edit" data-i="${i}">编辑</button><button class="remove" data-i="${i}">删除</button>`}
+      </span>
     </div>`).join('') || `<p class="sync-help">${emptyText}</p>`;
+
+  listEl.querySelectorAll('.edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      editingAccount = options.kind + ':' + btn.dataset.i;
+      renderAccountManageList();
+    });
+  });
+
+  listEl.querySelectorAll('.save').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = listEl.querySelector(`.rename-input[data-i="${btn.dataset.i}"]`);
+      renameManagedAccount(accounts, saveFn, parseInt(btn.dataset.i, 10), input.value, options);
+    });
+  });
+
+  listEl.querySelectorAll('.cancel').forEach(btn => {
+    btn.addEventListener('click', () => {
+      editingAccount = null;
+      renderAccountManageList();
+    });
+  });
 
   listEl.querySelectorAll('.remove').forEach(btn => {
     btn.addEventListener('click', () => {
-      accounts.splice(parseInt(btn.dataset.i, 10), 1);
-      saveFn(accounts);
-      renderAccountManageList();
+      runAccountBatchUpdate(() => {
+        accounts.splice(parseInt(btn.dataset.i, 10), 1);
+        saveFn(accounts);
+      });
+      refreshAfterAccountChange();
+    });
+  });
+
+  listEl.querySelectorAll('.rename-input').forEach(input => {
+    input.focus();
+    input.select();
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        renameManagedAccount(accounts, saveFn, parseInt(input.dataset.i, 10), input.value, options);
+      }
+      if (e.key === 'Escape') {
+        editingAccount = null;
+        renderAccountManageList();
+      }
     });
   });
 }
 
 function renderAccountManageList() {
-  renderManageList(document.getElementById('account-manage-list'), loadAccounts(), saveAccounts, '还没有现金账户，添加一个吧');
-  renderManageList(document.getElementById('credit-manage-list'), loadCreditAccounts(), saveCreditAccounts, '还没有信用卡账户，添加一个吧');
+  renderManageList(document.getElementById('account-manage-list'), loadAccounts(), saveAccounts, '还没有现金账户，添加一个吧', {
+    kind: 'cash',
+    recordType: 'income',
+    loadAdjustments: loadAccountAdjustments,
+    saveAdjustments: saveAccountAdjustments,
+  });
+  renderManageList(document.getElementById('credit-manage-list'), loadCreditAccounts(), saveCreditAccounts, '还没有信用卡账户，添加一个吧', {
+    kind: 'credit',
+    recordType: 'expense',
+    loadAdjustments: loadCreditAdjustments,
+    saveAdjustments: saveCreditAdjustments,
+  });
 }
 
 document.getElementById('add-account-btn').addEventListener('click', () => {
-  const input = document.getElementById('new-account-name');
-  const name = input.value.trim();
-  if (!name) return;
-  const accounts = loadAccounts();
-  if (!accounts.includes(name)) { accounts.push(name); saveAccounts(accounts); }
-  input.value = '';
-  renderAccountManageList();
+  addManagedAccount('new-account-name', loadAccounts, saveAccounts);
 });
 
 document.getElementById('add-credit-btn').addEventListener('click', () => {
-  const input = document.getElementById('new-credit-name');
+  addManagedAccount('new-credit-name', loadCreditAccounts, saveCreditAccounts);
+});
+
+function addManagedAccount(inputId, loadFn, saveFn) {
+  const input = document.getElementById(inputId);
   const name = input.value.trim();
   if (!name) return;
-  const accounts = loadCreditAccounts();
-  if (!accounts.includes(name)) { accounts.push(name); saveCreditAccounts(accounts); }
+  const accounts = loadFn();
+  if (accounts.includes(name)) {
+    alert('已经有这个账户名了');
+    return;
+  }
+  runAccountBatchUpdate(() => {
+    accounts.push(name);
+    saveFn(accounts);
+  });
   input.value = '';
-  renderAccountManageList();
+  refreshAfterAccountChange();
+}
+
+document.getElementById('new-account-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('add-account-btn').click();
+});
+
+document.getElementById('new-credit-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('add-credit-btn').click();
 });
 
 // ─── settings export / import (works around iOS wiping localStorage on reinstall) ──
@@ -2070,7 +2228,7 @@ function appendConfirmCard(expense) {
   function renderConfirmAccPills() {
     if (!accPillsEl) return;
     accPillsEl.innerHTML = accounts.map(a =>
-      `<button class="cat-pill${a === chosenAccount ? ' selected' : ''}" data-acc="${escapeHtml(a)}">${escapeHtml(a)}</button>`
+      `<button class="cat-pill${a === chosenAccount ? ' selected' : ''}" data-acc="${escapeAttr(a)}">${escapeHtml(a)}</button>`
     ).join('');
     accPillsEl.querySelectorAll('.cat-pill').forEach(p => {
       p.addEventListener('click', () => { chosenAccount = p.dataset.acc; renderConfirmAccPills(); });
