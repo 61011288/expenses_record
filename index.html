@@ -1631,7 +1631,7 @@ function renderAccountPills() {
   accountFieldEl.style.display = show ? '' : 'none';
   if (!show) { selectedAccount = null; return; }
   accountLabelEl.textContent = selectedType === 'income' ? '现金账户' : '信用卡';
-  if (!accounts.includes(selectedAccount)) selectedAccount = accounts[0];
+  if (!accounts.includes(selectedAccount)) selectedAccount = null;
   accountPillsEl.innerHTML = accounts.map(a =>
     `<button class="cat-pill${a === selectedAccount ? ' selected' : ''}" data-acc="${escapeAttr(a)}">${escapeHtml(a)}</button>`
   ).join('');
@@ -1696,8 +1696,6 @@ btnSubmit.addEventListener('click', () => {
   const amount = parseFloat(fAmount.value);
   if (!amount || amount <= 0) { fAmount.classList.add('error'); ok = false; }
   if (!selectedCat) { catPillsEl.classList.add('error'); ok = false; }
-  const selectableAccounts = selectedType === 'income' ? loadAccounts() : loadCreditAccounts();
-  if (selectableAccounts.length && !selectedAccount) { accountPillsEl.classList.add('error'); ok = false; }
   if (!ok) return;
 
   const data = {
@@ -2204,7 +2202,7 @@ function appendMsg(kind, text) {
 
 function appendConfirmCard(expense) {
   const accounts = expense.type === 'income' ? loadAccounts() : loadCreditAccounts();
-  let chosenAccount = accounts[0] || '';
+  let chosenAccount = '';
 
   const card = document.createElement('div');
   card.className = 'confirm-card';
