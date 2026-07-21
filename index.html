@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#ffffff">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,6 +31,9 @@
     }
 
     html { background: var(--bg); }
+
+    /* iOS 在聚焦字号 <16px 的输入框时会自动放大页面，全局兜底保证不触发 */
+    input, select, textarea { font-size: 16px; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
@@ -430,7 +433,7 @@
       flex: 1;
       min-width: 0;
       height: 34px;
-      font-size: 15px;
+      font-size: 16px;
       padding: 6px 8px;
     }
     .account-add-row { display: flex; gap: 8px; margin-top: 12px; }
@@ -1636,7 +1639,10 @@ function renderAccountPills() {
     `<button class="cat-pill${a === selectedAccount ? ' selected' : ''}" data-acc="${escapeAttr(a)}">${escapeHtml(a)}</button>`
   ).join('');
   accountPillsEl.querySelectorAll('.cat-pill').forEach(p => {
-    p.addEventListener('click', () => { selectedAccount = p.dataset.acc; renderAccountPills(); });
+    p.addEventListener('click', () => {
+      selectedAccount = p.dataset.acc === selectedAccount ? null : p.dataset.acc;
+      renderAccountPills();
+    });
   });
 }
 
@@ -2229,7 +2235,10 @@ function appendConfirmCard(expense) {
       `<button class="cat-pill${a === chosenAccount ? ' selected' : ''}" data-acc="${escapeAttr(a)}">${escapeHtml(a)}</button>`
     ).join('');
     accPillsEl.querySelectorAll('.cat-pill').forEach(p => {
-      p.addEventListener('click', () => { chosenAccount = p.dataset.acc; renderConfirmAccPills(); });
+      p.addEventListener('click', () => {
+        chosenAccount = p.dataset.acc === chosenAccount ? '' : p.dataset.acc;
+        renderConfirmAccPills();
+      });
     });
   }
   renderConfirmAccPills();
