@@ -842,7 +842,7 @@
 
     <div class="field">
       <label>金额</label>
-      <input type="text" id="f-amount" class="amount-input" placeholder="0.00" inputmode="decimal">
+      <input type="text" id="f-amount" class="amount-input" placeholder="0.00" inputmode="numeric">
     </div>
 
     <div class="field">
@@ -1525,6 +1525,64 @@ let selectedType = 'expense';
 let selectedCat = null;
 let selectedAccount = null;
 let editingId = null;
+let amountDigits = '';
+let amountInputStarted = false;
+
+function normalizeAmountDigits(value) {
+  return String(value || '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+}
+
+function formatAmountDigits(value) {
+  const padded = normalizeAmountDigits(value).padStart(3, '0');
+  return padded.slice(0, -2) + '.' + padded.slice(-2);
+}
+
+function renderAmountInput() {
+  fAmount.value = amountInputStarted ? formatAmountDigits(amountDigits) : '';
+  const end = fAmount.value.length;
+  fAmount.setSelectionRange(end, end);
+}
+
+function setAmountDigits(value, started = true) {
+  amountDigits = normalizeAmountDigits(value);
+  amountInputStarted = started;
+  renderAmountInput();
+}
+
+function shouldReplaceAmount() {
+  return fAmount.selectionStart === 0 && fAmount.selectionEnd === fAmount.value.length;
+}
+
+function appendAmountDigits(value) {
+  const digits = normalizeAmountDigits(value);
+  if (!digits) return;
+  amountDigits = normalizeAmountDigits((shouldReplaceAmount() ? '' : amountDigits) + digits);
+  amountInputStarted = true;
+  renderAmountInput();
+}
+
+function deleteAmountDigit() {
+  amountDigits = amountDigits.slice(0, -1);
+  amountInputStarted = true;
+  renderAmountInput();
+}
+
+fAmount.addEventListener('beforeinput', e => {
+  if (e.inputType.startsWith('delete')) {
+    e.preventDefault();
+    deleteAmountDigit();
+    return;
+  }
+  if (e.inputType.startsWith('insert')) {
+    e.preventDefault();
+    appendAmountDigits(e.data || '');
+  }
+});
+
+fAmount.addEventListener('paste', e => {
+  e.preventDefault();
+  appendAmountDigits(e.clipboardData.getData('text'));
+});
 
 function renderCatPills() {
   const cats = CATS[selectedType];
@@ -1667,14 +1725,14 @@ function openSheet(record) {
     selectedType = record.type;
     selectedCat = record.category;
     selectedAccount = record.account || null;
-    fAmount.value = record.amount;
+    setAmountDigits(Math.round(record.amount * 100));
     fDate.value = record.date;
     fNote.value = record.note || '';
   } else {
     selectedType = 'expense';
     selectedCat = null;
     selectedAccount = null;
-    fAmount.value = '';
+    setAmountDigits('', false);
     fDate.value = today();
     fNote.value = '';
   }
