@@ -387,6 +387,12 @@
     .balance-equation .credit {
       color: var(--muted);
     }
+    .balance-saving {
+      margin-top: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--muted);
+    }
     .balance-equation .result {
       color: var(--text);
       font-size: 28px;
@@ -425,6 +431,21 @@
       cursor: pointer;
       padding: 4px 8px;
       -webkit-tap-highlight-color: transparent;
+    }
+    .account-manage-row .saving {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 3px 7px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .account-manage-row .saving.on {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
     }
     .account-manage-row .remove { color: #d93025; }
     .account-manage-row .cancel { color: var(--muted); }
@@ -1030,6 +1051,19 @@ function saveCreditAccounts(accounts) {
   schedulePush();
 }
 
+// cash accounts flagged as savings: shown separately and excluded from 总金额
+function loadSavingAccounts() {
+  try {
+    const a = JSON.parse(localStorage.getItem('saving_accounts') || '[]');
+    return Array.isArray(a) ? a : [];
+  } catch { return []; }
+}
+
+function saveSavingAccounts(names) {
+  localStorage.setItem('saving_accounts', JSON.stringify(names));
+  schedulePush();
+}
+
 // manual balance correction per account: lets the displayed balance be set directly
 // (e.g. to seed your real current balance) instead of only ever being the sum of records
 function loadAccountAdjustments() {
@@ -1394,7 +1428,9 @@ function renderBalance() {
   const creditNamesArr = Array.from(creditNames);
   const cashTotal = accountNamesArr.reduce((s, n) => s + accountBalance(n), 0);
   const creditTotal = creditNamesArr.reduce((s, n) => s + creditOutstanding(n), 0);
-  const disposableTotal = cashTotal - creditTotal;
+  const savingNames = new Set(loadSavingAccounts());
+  const savingTotal = accountNamesArr.filter(n => savingNames.has(n)).reduce((s, n) => s + accountBalance(n), 0);
+  const disposableTotal = cashTotal - creditTotal - savingTotal;
   const totalColor = disposableTotal > 0 ? 'color:var(--income)' : disposableTotal < 0 ? 'color:#d93025' : '';
   let html = `
     <div class="balance-total">
@@ -1402,9 +1438,11 @@ function renderBalance() {
       <div class="balance-equation">
         <span>${fmtMoney(cashTotal)}</span>
         <span class="credit">- ${fmtMoney(creditTotal)}</span>
+        <span class="credit">- ${fmtMoney(savingTotal)}</span>
         <span>=</span>
         <span class="result" style="${totalColor}">${fmtMoney(disposableTotal)}</span>
       </div>
+      <div class="balance-saving">存款 = ${fmtMoney(savingTotal)}</div>
     </div>
     <div class="sub-title">账户余额</div>`;
   html += accountNamesArr.map(name => {
@@ -1817,6 +1855,7 @@ const GIST_FILE_CREDIT_ADJ = 'credit_adjustments.json';
 const GIST_FILE_ACCOUNTS = 'accounts.json';
 const GIST_FILE_CREDIT_ACCOUNTS = 'credit_accounts.json';
 const GIST_FILE_CATS = 'categories.json';
+const GIST_FILE_SAVING_ACCOUNTS = 'saving_accounts.json';
 const syncBtn    = document.getElementById('sync-btn');
 const syncOverlay = document.getElementById('sync-overlay');
 const syncStatus = document.getElementById('sync-status');
@@ -1860,6 +1899,7 @@ async function pushToGist() {
       [GIST_FILE_ACCOUNTS]: { content: localStorage.getItem('accounts') || JSON.stringify(DEFAULT_ACCOUNTS) },
       [GIST_FILE_CREDIT_ACCOUNTS]: { content: localStorage.getItem('credit_accounts') || JSON.stringify(DEFAULT_CREDIT_ACCOUNTS) },
       [GIST_FILE_CATS]: { content: localStorage.getItem('categories') || JSON.stringify(DEFAULT_CATS) },
+      [GIST_FILE_SAVING_ACCOUNTS]: { content: localStorage.getItem('saving_accounts') || '[]' },
     },
   });
   try {
@@ -1894,12 +1934,14 @@ async function pullFromGist() {
     const fileAccounts = data.files && data.files[GIST_FILE_ACCOUNTS];
     const fileCreditAccounts = data.files && data.files[GIST_FILE_CREDIT_ACCOUNTS];
     const fileCats = data.files && data.files[GIST_FILE_CATS];
+    const fileSavingAccounts = data.files && data.files[GIST_FILE_SAVING_ACCOUNTS];
     if (file && file.content) localStorage.setItem('expense_records', file.content);
     if (fileAdj && fileAdj.content) localStorage.setItem('account_adjustments', fileAdj.content);
     if (fileCreditAdj && fileCreditAdj.content) localStorage.setItem('credit_adjustments', fileCreditAdj.content);
     if (fileAccounts && fileAccounts.content) localStorage.setItem('accounts', fileAccounts.content);
     if (fileCreditAccounts && fileCreditAccounts.content) localStorage.setItem('credit_accounts', fileCreditAccounts.content);
     if (fileCats && fileCats.content) localStorage.setItem('categories', fileCats.content);
+    if (fileSavingAccounts && fileSavingAccounts.content) localStorage.setItem('saving_accounts', fileSavingAccounts.content);
     CATS = loadCats();
     renderAll();
     renderAccountManageList();
@@ -2002,6 +2044,7 @@ function renameManagedAccount(accounts, saveFn, index, newName, options) {
     accounts[index] = name;
     saveFn(accounts);
     renameRecordsAccount(oldName, name, options.recordType);
+    if (options.kind === 'cash') saveSavingAccounts(loadSavingAccounts().map(n => n === oldName ? name : n));
     moveAdjustmentName(options.loadAdjustments, options.saveAdjustments, oldName, name);
   });
   if (selectedAccount === oldName) selectedAccount = name;
@@ -2010,6 +2053,7 @@ function renameManagedAccount(accounts, saveFn, index, newName, options) {
 }
 
 function renderManageList(listEl, accounts, saveFn, emptyText, options) {
+  const savingNames = new Set(loadSavingAccounts());
   listEl.innerHTML = accounts.map((a, i) => `
     <div class="account-manage-row">
       ${editingAccount === options.kind + ':' + i
@@ -2018,9 +2062,19 @@ function renderManageList(listEl, accounts, saveFn, emptyText, options) {
       <span class="actions">
         ${editingAccount === options.kind + ':' + i
           ? `<button class="save" data-i="${i}">保存</button><button class="cancel" data-i="${i}">取消</button>`
-          : `<button class="edit" data-i="${i}">编辑</button><button class="remove" data-i="${i}">删除</button>`}
+          : `${options.kind === 'cash' ? `<button class="saving${savingNames.has(a) ? ' on' : ''}" data-i="${i}">存款</button>` : ''}<button class="edit" data-i="${i}">编辑</button><button class="remove" data-i="${i}">删除</button>`}
       </span>
     </div>`).join('') || `<p class="sync-help">${emptyText}</p>`;
+
+  listEl.querySelectorAll('.saving').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const name = accounts[parseInt(btn.dataset.i, 10)];
+      const saving = loadSavingAccounts();
+      saveSavingAccounts(saving.includes(name) ? saving.filter(n => n !== name) : saving.concat(name));
+      renderAccountManageList();
+      renderAll();
+    });
+  });
 
   listEl.querySelectorAll('.edit').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2046,8 +2100,9 @@ function renderManageList(listEl, accounts, saveFn, emptyText, options) {
   listEl.querySelectorAll('.remove').forEach(btn => {
     btn.addEventListener('click', () => {
       runAccountBatchUpdate(() => {
-        accounts.splice(parseInt(btn.dataset.i, 10), 1);
+        const [removed] = accounts.splice(parseInt(btn.dataset.i, 10), 1);
         saveFn(accounts);
+        if (options.kind === 'cash') saveSavingAccounts(loadSavingAccounts().filter(n => n !== removed));
       });
       refreshAfterAccountChange();
     });
