@@ -1430,19 +1430,19 @@ function renderBalance() {
   const creditTotal = creditNamesArr.reduce((s, n) => s + creditOutstanding(n), 0);
   const savingNames = new Set(loadSavingAccounts());
   const savingTotal = accountNamesArr.filter(n => savingNames.has(n)).reduce((s, n) => s + accountBalance(n), 0);
-  const disposableTotal = cashTotal - creditTotal - savingTotal;
+  const spendableCash = cashTotal - savingTotal;
+  const disposableTotal = spendableCash - creditTotal;
   const totalColor = disposableTotal > 0 ? 'color:var(--income)' : disposableTotal < 0 ? 'color:#d93025' : '';
   let html = `
     <div class="balance-total">
       <div class="label">总金额</div>
       <div class="balance-equation">
-        <span>${fmtMoney(cashTotal)}</span>
+        <span>${fmtMoney(spendableCash)}</span>
         <span class="credit">- ${fmtMoney(creditTotal)}</span>
-        <span class="credit">- ${fmtMoney(savingTotal)}</span>
         <span>=</span>
         <span class="result" style="${totalColor}">${fmtMoney(disposableTotal)}</span>
       </div>
-      <div class="balance-saving">存款 = ${fmtMoney(savingTotal)}</div>
+      <div class="balance-saving">另有存款 = ${fmtMoney(savingTotal)}</div>
     </div>
     <div class="sub-title">账户余额</div>`;
   html += accountNamesArr.map(name => {
