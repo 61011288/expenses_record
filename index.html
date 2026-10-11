@@ -117,6 +117,19 @@
     .panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
     .panel.active { display: flex; }
 
+    .current-balance {
+      flex-shrink: 0;
+      margin: 8px 16px 0;
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 11px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .current-balance .label { font-size: 13px; color: var(--muted); }
+    .current-balance .value { font-size: 17px; font-weight: 700; }
+
     .item-list {
       flex: 1;
       padding: 8px 16px 90px;
@@ -832,6 +845,10 @@
 </div>
 
 <div class="panel active" id="panel-bills">
+  <div class="current-balance">
+    <span class="label">当前余额</span>
+    <span class="value" id="current-balance-value"></span>
+  </div>
   <div class="item-list" id="list-bills"></div>
 </div>
 
@@ -1415,8 +1432,8 @@ function renderStats() {
   });
 }
 
-function renderBalance() {
-  const wrap = document.getElementById('balance-wrap');
+// 总金额 = 非存款现金账户之和 - 信用卡之和; shared by 余额 tab and the 账单 tab header
+function computeBalanceSummary() {
   const accounts = loadAccounts();
   const accountNames = new Set(accounts);
   loadRecords().forEach(r => { if (r.account && r.type === 'income') accountNames.add(r.account); });
@@ -1432,7 +1449,24 @@ function renderBalance() {
   const savingTotal = accountNamesArr.filter(n => savingNames.has(n)).reduce((s, n) => s + accountBalance(n), 0);
   const spendableCash = cashTotal - savingTotal;
   const disposableTotal = spendableCash - creditTotal;
-  const totalColor = disposableTotal > 0 ? 'color:var(--income)' : disposableTotal < 0 ? 'color:#d93025' : '';
+  return { accountNamesArr, creditNamesArr, creditTotal, savingTotal, spendableCash, disposableTotal };
+}
+
+function balanceColorStyle(amount) {
+  return amount > 0 ? 'color:var(--income)' : amount < 0 ? 'color:#d93025' : '';
+}
+
+function renderCurrentBalance() {
+  const el = document.getElementById('current-balance-value');
+  const { disposableTotal } = computeBalanceSummary();
+  el.textContent = fmtMoney(disposableTotal);
+  el.style.cssText = balanceColorStyle(disposableTotal);
+}
+
+function renderBalance() {
+  const wrap = document.getElementById('balance-wrap');
+  const { accountNamesArr, creditNamesArr, creditTotal, savingTotal, spendableCash, disposableTotal } = computeBalanceSummary();
+  const totalColor = balanceColorStyle(disposableTotal);
   let html = `
     <div class="balance-total">
       <div class="label">总金额</div>
@@ -1494,6 +1528,7 @@ function renderBalance() {
         const val = evalExpr(input.value);
         if (!isNaN(val) && isFinite(val)) saveValue(name, val);
         renderBalance();
+        renderCurrentBalance();
       }
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', e => {
@@ -1513,6 +1548,7 @@ function renderAll() {
   renderBills();
   renderStats();
   renderBalance();
+  renderCurrentBalance();
 }
 
 // ─── tabs ─────────────────────────────────────────────────────────────────────
